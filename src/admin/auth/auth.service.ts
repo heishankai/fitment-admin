@@ -12,7 +12,7 @@ export class AuthService {
     if (user?.password !== password) {
       throw new UnauthorizedException('密码错误');
     }
-    
+
     return {
       message: '登录成功',
       user: {
@@ -22,7 +22,7 @@ export class AuthService {
         // password: user.password
       },
       token: 'jwt-token-placeholder', // 实际项目中应该生成JWT token
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
   }
 }

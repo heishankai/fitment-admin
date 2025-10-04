@@ -24,7 +24,10 @@ export class UserController {
     try {
       return await this.userService.getAllUser();
     } catch (error) {
-      throw new HttpException('获取用户列表失败', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        '获取用户列表失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
@@ -45,7 +48,10 @@ export class UserController {
       if (error instanceof HttpException) {
         throw error;
       }
-      throw new HttpException('获取用户信息失败', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        '获取用户信息失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
@@ -61,13 +67,13 @@ export class UserController {
       if (!body.username || !body.password) {
         throw new HttpException('用户名和密码不能为空', HttpStatus.BAD_REQUEST);
       }
-      
+
       // 检查用户名是否已存在
       const existingUser = await this.userService.findByUsername(body.username);
       if (existingUser) {
         throw new HttpException('用户名已存在', HttpStatus.CONFLICT);
       }
-      
+
       return await this.userService.createUser(body);
     } catch (error) {
       if (error instanceof HttpException) {
@@ -90,12 +96,15 @@ export class UserController {
       if (!user) {
         throw new HttpException('用户不存在', HttpStatus.NOT_FOUND);
       }
-      
+
       const result = await this.userService.deleteUser(id);
       if (result.affected === 0) {
-        throw new HttpException('删除用户失败', HttpStatus.INTERNAL_SERVER_ERROR);
+        throw new HttpException(
+          '删除用户失败',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
       }
-      
+
       return result;
     } catch (error) {
       if (error instanceof HttpException) {
