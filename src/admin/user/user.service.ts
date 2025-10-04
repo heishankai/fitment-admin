@@ -51,4 +51,13 @@ export class UserService {
   deleteUser(id: string): Promise<DeleteResult> {
     return this.userRepository.delete(id);
   }
+
+  /**
+   * 根据用户名查询用户
+   * @param username 用户名
+   * @returns 用户信息
+   */
+  findByUsername(username: string): Promise<User | null> {
+    return this.userRepository.findOneBy({ username });
+  }
 }

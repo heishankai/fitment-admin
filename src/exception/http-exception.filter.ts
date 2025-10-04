@@ -5,6 +5,7 @@ import {
   HttpException,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { ApiResponseDto } from '../common/dto/response.dto';
 
 /**
  * @全局异常过滤器 用于捕获和处理 HTTP 异常
@@ -21,11 +22,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const request = ctx.getRequest<Request>();
     const status = exception.getStatus();
 
-    response.status(status).json({
-      statusCode: status || 500,
-      timestamp: new Date().toISOString(),
-      path: request.url,
-      message: exception.getResponse() || '接口错误，请刷新稍后重试',
-    });
+    const errorMessage = exception.getResponse();
+    const message =
+      typeof errorMessage === 'string'
+        ? errorMessage
+        : (errorMessage as any)?.message || '接口错误，请刷新稍后重试';
+
+    const errorResponse = ApiResponseDto.error(status, message);
+
+    response.status(status).json(errorResponse);
   }
 }

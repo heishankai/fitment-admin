@@ -21,20 +21,32 @@ export class AppController {
   constructor(private readonly appService: AppService) {}
 
   @Get('/test')
-  getGoodbye(@Query() query): string {
+  getGoodbye(@Query() query) {
     console.log('query', query);
-    return `This is a GET request with query: ${JSON.stringify(query)}`;
+    return {
+      message: `This is a GET request with query: ${JSON.stringify(query)}`,
+      query: query,
+      timestamp: new Date().toISOString()
+    };
   }
 
   @Post('/post')
-  postHello(@Body() body): string {
+  postHello(@Body() body) {
     console.log('body', body);
-    return 'ddd';
+    return {
+      message: 'POST request received',
+      data: body,
+      timestamp: new Date().toISOString()
+    };
   }
 
   @Get('/:id')
-  getHello(@Param() params): string {
+  getHello(@Param() params) {
     console.log('params', params);
-    return this.appService.getHello();
+    return {
+      message: this.appService.getHello(),
+      params: params,
+      timestamp: new Date().toISOString()
+    };
   }
 }
