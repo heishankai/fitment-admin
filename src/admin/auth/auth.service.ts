@@ -1,21 +1,33 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   async login(username: string, password: string) {
     const user = await this.userService.findByUsername(username);
 
     if (user?.password !== password) {
-      throw new UnauthorizedException('密码错误');
+      throw new HttpException('用户名或密码错误', HttpStatus.BAD_REQUEST);
     }
 
-    return {
-      id: user.id,
+    const payload = {
       username: user.username,
-      token: 'jwt-token-placeholder', // 实际项目中应该生成JWT token
+      userid: user.id,
+    };
+
+    return {
+      token: this.jwtService.sign(payload),
     };
   }
 }

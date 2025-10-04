@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DeleteResult, Repository } from 'typeorm';
 import { User } from './user.entity';
@@ -58,6 +58,10 @@ export class UserService {
    * @returns 用户信息
    */
   findByUsername(username: string): Promise<User | null> {
-    return this.userRepository.findOneBy({ username });
+    const user = this.userRepository.findOneBy({ username });
+    if (!user) {
+      throw new HttpException('用户名不正确', HttpStatus.UNAUTHORIZED);
+    }
+    return user;
   }
 }

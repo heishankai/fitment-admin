@@ -7,6 +7,7 @@ import {
   Delete,
   HttpException,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { User } from './user.entity';
@@ -15,6 +16,24 @@ import { DeleteResult } from 'typeorm';
 @Controller('admin/users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
+  /**
+   * 获取用户信息
+   */
+  @Get('info')
+  async getUserByToken(@Req() request): Promise<User | any> {
+    const user = await this.userService.findByUsername(request.user.username);
+
+    if (!user) {
+      throw new HttpException('用户不存在', HttpStatus.NOT_FOUND);
+    }
+
+    return {
+      active: user?.active,
+      avatar: user?.avatar,
+      role: user?.role,
+      username: user?.username,
+    };
+  }
   /**
    * 获取所有用户信息
    * @returns 用户信息列表

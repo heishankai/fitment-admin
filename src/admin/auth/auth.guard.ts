@@ -1,4 +1,14 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  HttpException,
+  HttpStatus,
+  Injectable,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { JwtService } from '@nestjs/jwt';
+import { JWT_SECRET } from './auth.jwt.secret';
+import { IS_PUBLIC_KEY } from './public.decorator';
 
 /**
  * 权限守卫
@@ -7,13 +17,56 @@ import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly reflector: Reflector,
+  ) {}
+
   /**
    * 权限控制
    * @param context 请求上下文
    * @return boolean 是否允许访问
    */
-  canActivate(context: ExecutionContext): boolean {
-    console.log('AuthGuard');
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    // 检查是否为公共路由
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isPublic) {
+      console.log('Public route, skipping authentication');
+      return true;
+    }
+
+    const request = context.switchToHttp().getRequest();
+    const token = extractToken(request);
+
+    if (!token) {
+      throw new HttpException('未授权', HttpStatus.UNAUTHORIZED);
+    }
+
+    try {
+      const payload = await this.jwtService.verifyAsync(token, {
+        secret: JWT_SECRET,
+      });
+
+      request['user'] = payload;
+    } catch (error) {
+      throw new HttpException('未授权', HttpStatus.UNAUTHORIZED);
+    }
+
     return true;
   }
 }
+
+/**
+ * 提取token
+ * @param request 请求
+ * @returns token
+ */
+const extractToken = (request: any): string => {
+  const [type, token] = request.headers.authorization?.split(' ') ?? [];
+
+  return type === 'Bearer' ? token : '';
+};
