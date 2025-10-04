@@ -1,4 +1,10 @@
-import { Controller, Post, Body, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 // 导入公共装饰器(允许未登录访问)
 import { Public } from './public.decorator';
@@ -24,7 +30,6 @@ export class AuthController {
         throw new HttpException('用户名和密码不能为空', HttpStatus.BAD_REQUEST);
       }
 
-      console.log('body', body);
       return await this.authService.login(body.username, body.password);
     } catch (error) {
       if (error instanceof HttpException) {

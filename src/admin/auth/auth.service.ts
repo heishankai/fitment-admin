@@ -14,15 +14,9 @@ export class AuthService {
     }
 
     return {
-      message: '登录成功',
-      user: {
-        id: user.id,
-        username: user.username,
-        // 注意：实际项目中不应该返回密码
-        // password: user.password
-      },
+      id: user.id,
+      username: user.username,
       token: 'jwt-token-placeholder', // 实际项目中应该生成JWT token
-      timestamp: new Date().toISOString(),
     };
   }
 }
