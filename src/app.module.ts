@@ -8,7 +8,6 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule } from './admin/user/user.module';
 import { AuthModule } from './admin/auth/auth.module';
-import { ExampleController } from './example/example.controller';
 
 /**
  * 应用程序的根模块
@@ -30,7 +29,7 @@ import { ExampleController } from './example/example.controller';
     UserModule,
     AuthModule,
   ], // 导入其他模块的数组
-  controllers: [AppController, ExampleController], // 注册控制器，处理 HTTP 请求
+  controllers: [AppController], // 注册控制器，处理 HTTP 请求
   providers: [AppService], // 注册服务提供者，包含业务逻辑
 })
 export class AppModule {}
