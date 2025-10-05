@@ -75,7 +75,7 @@ export class CraftsmanService {
       // 获取参数
       const {
         pageIndex = 1,
-        pageSize = 20,
+        pageSize = 10,
         craftsman_name = '',
         craftsman_phone = '',
       } = body ?? {};
@@ -123,7 +123,7 @@ export class CraftsmanService {
         code: 500,
         message: '分页查询失败: ' + error.message,
         pageIndex: 1,
-        pageSize: 20,
+        pageSize: 10,
         total: 0,
         pageTotal: 0,
       };

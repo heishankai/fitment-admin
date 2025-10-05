@@ -33,9 +33,9 @@ export class Craftsman {
   @Column('json')
   craftsman_skills: string[];
 
-  // 工匠地址
+  // 工匠城市
   @Column()
-  craftsman_address: string;
+  craftsman_city: string;
 
   // 工匠注册时间
   @Column({
