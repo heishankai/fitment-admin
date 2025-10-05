@@ -34,6 +34,7 @@ export class UserController {
       username: user?.username,
     };
   }
+
   /**
    * 获取所有用户信息
    * @returns 用户信息列表

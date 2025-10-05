@@ -27,6 +27,11 @@ export class ResponseInterceptor<T>
           return data;
         }
 
+        // 如果数据已经是完整的响应格式（包含success、code、message等字段），直接返回
+        if (data && typeof data === 'object' && 'success' in data && 'code' in data) {
+          return data;
+        }
+
         // 否则包装成成功响应格式
         return ApiResponseDto.success(data, 200);
       }),
