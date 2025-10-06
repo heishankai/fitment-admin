@@ -22,7 +22,6 @@ export class AppController {
 
   @Get('/test')
   getGoodbye(@Query() query) {
-    console.log('query', query);
     return {
       message: `This is a GET request with query: ${JSON.stringify(query)}`,
       query: query,
@@ -32,7 +31,6 @@ export class AppController {
 
   @Post('/post')
   postHello(@Body() body) {
-    console.log('body', body);
     return {
       message: 'POST request received',
       data: body,
@@ -42,7 +40,6 @@ export class AppController {
 
   @Get('/:id')
   getHello(@Param() params) {
-    console.log('params', params);
     return {
       message: this.appService.getHello(),
       params: params,

@@ -8,6 +8,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule, AuthModule, CraftsmanModule } from './admin';
 import { UploadModule } from './common/upload/upload.module';
+import { DATABASE_CONFIG } from './common/constants/app.constants';
 
 /**
  * 应用程序的根模块
@@ -16,15 +17,14 @@ import { UploadModule } from './common/upload/upload.module';
 @Module({
   imports: [
     TypeOrmModule.forRoot({
-      type: 'mysql',
-      host: '127.0.0.1', // 生产替换为服务器ip
-      port: 3306, // 生产数据库端口，一般还是 3306
-      username: 'root',
-      password: 'Lk1194657256',
-      database: 'fitment_db_dev',
-      // ----------------------------------------------------------
-      synchronize: true, // 是否自动同步实体到数据库，开发环境下可以开启,生产环境必须关闭
-      autoLoadEntities: true, // 自动加载定义的实体到数据库
+      type: DATABASE_CONFIG.type,
+      host: DATABASE_CONFIG.host,
+      port: DATABASE_CONFIG.port,
+      username: DATABASE_CONFIG.username,
+      password: DATABASE_CONFIG.password,
+      database: DATABASE_CONFIG.database,
+      synchronize: DATABASE_CONFIG.synchronize,
+      autoLoadEntities: DATABASE_CONFIG.autoLoadEntities,
     }),
     UserModule,
     AuthModule,

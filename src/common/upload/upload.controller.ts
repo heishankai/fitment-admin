@@ -9,6 +9,8 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { OssService } from '../services/oss.service';
+import { UPLOAD_CONFIG } from '../constants/app.constants';
+import { Public } from '../../admin/auth/public.decorator';
 
 @Controller('upload')
 export class UploadController {
@@ -20,6 +22,7 @@ export class UploadController {
    * @param body 包含folder参数，指定上传到哪个文件夹
    * @returns 上传结果
    */
+  @Public()
   @Post()
   @UseInterceptors(FileInterceptor('file'))
   async uploadFile(
@@ -32,7 +35,7 @@ export class UploadController {
       }
 
       // 默认上传到uploads文件夹，可以通过body.folder指定
-      const folder = body.folder || 'uploads';
+      const folder = body.folder || UPLOAD_CONFIG.defaultFolder;
 
       // 上传到OSS
       const result = await this.ossService.uploadFile(file, folder);
@@ -63,6 +66,7 @@ export class UploadController {
    * @param body 包含folder参数
    * @returns 上传结果
    */
+  @Public()
   @Post('image')
   @UseInterceptors(FileInterceptor('file'))
   async uploadImage(
@@ -79,7 +83,7 @@ export class UploadController {
         throw new HttpException('只能上传图片文件', HttpStatus.BAD_REQUEST);
       }
 
-      const folder = body.folder || 'images';
+      const folder = body.folder || UPLOAD_CONFIG.imageFolder;
 
       const result = await this.ossService.uploadFile(file, folder);
 
@@ -108,6 +112,7 @@ export class UploadController {
    * @param body 包含fileUrl参数，指定要删除的文件URL
    * @returns 删除结果
    */
+  @Public()
   @Post('delete')
   async deleteFile(@Body() body: { fileUrl: string }) {
     try {

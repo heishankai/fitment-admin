@@ -1,6 +1,6 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import OSS from 'ali-oss';
-import { OSS_CONFIG } from '../config/oss.config';
+import { OSS_CONFIG, UPLOAD_CONFIG } from '../constants/app.constants';
 
 @Injectable()
 export class OssService {
@@ -19,12 +19,12 @@ export class OssService {
   /**
    * 上传文件到OSS
    * @param file 文件对象
-   * @param folder 文件夹名称，默认为 'uploads'
+   * @param folder 文件夹名称，默认为 UPLOAD_CONFIG.defaultFolder
    * @returns 上传结果
    */
   async uploadFile(
     file: Express.Multer.File,
-    folder: string = 'uploads',
+    folder: string = UPLOAD_CONFIG.defaultFolder,
   ): Promise<{
     url: string;
     name: string;
@@ -34,15 +34,15 @@ export class OssService {
   }> {
     try {
       // 验证文件大小
-      if (file.size > OSS_CONFIG.maxFileSize) {
+      if (file.size > UPLOAD_CONFIG.maxFileSize) {
         throw new HttpException(
-          `文件大小不能超过 ${OSS_CONFIG.maxFileSize / 1024 / 1024}MB`,
+          `文件大小不能超过 ${UPLOAD_CONFIG.maxFileSize / 1024 / 1024}MB`,
           HttpStatus.BAD_REQUEST,
         );
       }
 
       // 验证文件类型
-      if (!OSS_CONFIG.allowedMimeTypes.includes(file.mimetype)) {
+      if (!UPLOAD_CONFIG.allowedMimeTypes.includes(file.mimetype)) {
         throw new HttpException('不支持的文件类型', HttpStatus.BAD_REQUEST);
       }
 
