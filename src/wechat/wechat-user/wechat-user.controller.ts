@@ -9,7 +9,7 @@ export class WechatUserController {
   /**
    * 微信用户登录
    * @param query { code: string }
-   * @returns 用户信息
+   * @returns 用户信息和token
    */
   @Public()
   @Get('login')

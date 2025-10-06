@@ -1,11 +1,13 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { JwtService } from '@nestjs/jwt';
 import axios from 'axios';
 // constants
 import {
   WECHAT_LOGIN_URL,
   WECHAT_CONFIG,
+  JWT_CONFIG,
 } from '../../common/constants/app.constants';
 // entity
 import { WechatUser } from './wechat-user.entity';
@@ -15,12 +17,13 @@ export class WechatUserService {
   constructor(
     @InjectRepository(WechatUser)
     private readonly wechatUserRepository: Repository<WechatUser>,
+    private readonly jwtService: JwtService,
   ) {}
 
   /**
    * 微信用户登录
    * @param code 微信小程序登录code
-   * @returns 用户信息
+   * @returns 用户信息和token
    */
   async wechatLogin(code: string): Promise<WechatUser> {
     try {
@@ -45,7 +48,7 @@ export class WechatUserService {
       const { openid } = data ?? {};
 
       // 3. 查找用户，如果没有就创建
-      let user = await this.wechatUserRepository.findOne({
+      let user: any = await this.wechatUserRepository.findOne({
         where: { openid },
       });
 
@@ -58,6 +61,20 @@ export class WechatUserService {
         });
         user = await this.wechatUserRepository.save(user);
       }
+
+      // 4. 生成JWT token
+      const payload = {
+        userId: user.id,
+        openid: user.openid,
+        type: 'wechat',
+      };
+
+      const token = this.jwtService.sign(payload, {
+        secret: JWT_CONFIG.secret,
+        expiresIn: JWT_CONFIG.expiresIn,
+      });
+
+      user.token = token;
 
       return user;
     } catch (error) {
