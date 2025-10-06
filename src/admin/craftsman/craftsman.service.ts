@@ -2,7 +2,7 @@ import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 // entitly
-import { Craftsman } from './craftsman.entitly';
+import { Craftsman } from './craftsman.entity';
 
 /**
  * 工匠服务类

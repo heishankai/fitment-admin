@@ -7,15 +7,15 @@ import { AuthService } from './auth.service';
 // 导入权限守卫(用于权限控制)
 import { AuthGuard } from './auth.guard';
 import { UserModule } from '../user/user.module';
-import { JWT_SECRET } from './auth.jwt.secret';
+import { JWT_CONFIG } from '../../common/constants/app.constants';
 
 @Module({
   imports: [
     UserModule,
     JwtModule.register({
       global: true, // 全局注册
-      secret: JWT_SECRET, // 私钥
-      signOptions: { expiresIn: '3d' }, // 过期时间 (3天)
+      secret: JWT_CONFIG.secret, // 私钥
+      signOptions: { expiresIn: JWT_CONFIG.expiresIn }, // 过期时间 (3天)
     }),
   ],
   controllers: [AuthController],

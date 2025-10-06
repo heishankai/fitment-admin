@@ -6,8 +6,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 // 导入应用程序服务
 import { AppService } from './app.service';
-import { UserModule, AuthModule, CraftsmanModule } from './admin';
+// 导入公共文件上传模块
 import { UploadModule } from './common/upload/upload.module';
+// 导入管理模块
+import { UserModule, AuthModule, CraftsmanModule } from './admin';
+// 导入微信用户模块
+import { WechatUserModule } from './wechat';
+// 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
 
 /**
@@ -30,6 +35,7 @@ import { DATABASE_CONFIG } from './common/constants/app.constants';
     AuthModule,
     CraftsmanModule,
     UploadModule, // 公共文件上传模块
+    WechatUserModule, // 微信用户模块
   ], // 导入其他模块的数组
   controllers: [AppController], // 注册控制器，处理 HTTP 请求
   providers: [AppService], // 注册服务提供者，包含业务逻辑

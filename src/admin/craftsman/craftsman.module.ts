@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 // entitly
-import { Craftsman } from './craftsman.entitly';
+import { Craftsman } from './craftsman.entity';
 // service
 import { CraftsmanService } from './craftsman.service';
 // controller

@@ -1,14 +1,6 @@
-import {
-  Controller,
-  Get,
-  Param,
-  Post,
-  Body,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
+import { Controller, Get, Param, Post, Body } from '@nestjs/common';
 // entitly
-import { Craftsman } from './craftsman.entitly';
+import { Craftsman } from './craftsman.entity';
 // service
 import { CraftsmanService } from './craftsman.service';
 
