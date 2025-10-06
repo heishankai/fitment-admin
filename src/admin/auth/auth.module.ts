@@ -15,7 +15,7 @@ import { JWT_SECRET } from './auth.jwt.secret';
     JwtModule.register({
       global: true, // 全局注册
       secret: JWT_SECRET, // 私钥
-      signOptions: { expiresIn: '24h' }, // 过期时间 (24小时)
+      signOptions: { expiresIn: '3d' }, // 过期时间 (3天)
     }),
   ],
   controllers: [AuthController],
