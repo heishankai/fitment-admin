@@ -38,7 +38,7 @@ export class AppController {
     };
   }
 
-  @Get('/:id')
+  @Get('/app/:id')
   getHello(@Param() params) {
     return {
       message: this.appService.getHello(),

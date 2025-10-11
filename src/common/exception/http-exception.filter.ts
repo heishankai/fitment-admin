@@ -5,7 +5,7 @@ import {
   HttpException,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { ApiResponseDto } from '../common/dto/response.dto';
+import { ApiResponseDto } from '../dto/response.dto';
 
 /**
  * @全局异常过滤器 用于捕获和处理 HTTP 异常

@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { JWT_CONFIG } from '../../common/constants/app.constants';
+import { JWT_CONFIG } from '../common/constants/app.constants';
 import { IS_PUBLIC_KEY } from './public.decorator';
 
 /**

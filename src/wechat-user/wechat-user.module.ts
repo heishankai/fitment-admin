@@ -8,7 +8,7 @@ import { WechatUserController } from './wechat-user.controller';
 // service
 import { WechatUserService } from './wechat-user.service';
 // constants
-import { JWT_CONFIG } from '../../common/constants/app.constants';
+import { JWT_CONFIG } from '../common/constants/app.constants';
 
 @Module({
   imports: [

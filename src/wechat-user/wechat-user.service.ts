@@ -8,7 +8,7 @@ import {
   WECHAT_LOGIN_URL,
   WECHAT_CONFIG,
   JWT_CONFIG,
-} from '../../common/constants/app.constants';
+} from '../common/constants/app.constants';
 // entity
 import { WechatUser } from './wechat-user.entity';
 

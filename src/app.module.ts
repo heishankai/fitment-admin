@@ -9,9 +9,14 @@ import { AppService } from './app.service';
 // 导入公共文件上传模块
 import { UploadModule } from './common/upload/upload.module';
 // 导入管理模块
-import { UserModule, AuthModule, CraftsmanModule } from './admin';
-// 导入微信用户模块
-import { WechatUserModule } from './wechat';
+import {
+  UserModule,
+  AuthModule,
+  CraftsmanModule,
+  WechatUserModule,
+  CaseQueryModule,
+  CityModule,
+} from './index';
 // 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
 
@@ -36,6 +41,8 @@ import { DATABASE_CONFIG } from './common/constants/app.constants';
     CraftsmanModule,
     UploadModule, // 公共文件上传模块
     WechatUserModule, // 微信用户模块
+    CaseQueryModule, // 案例查询模块
+    CityModule, // 城市模块
   ], // 导入其他模块的数组
   controllers: [AppController], // 注册控制器，处理 HTTP 请求
   providers: [AppService], // 注册服务提供者，包含业务逻辑

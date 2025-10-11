@@ -10,7 +10,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { OssService } from '../services/oss.service';
 import { UPLOAD_CONFIG } from '../constants/app.constants';
-import { Public } from '../../admin/auth/public.decorator';
+import { Public } from '../../auth/public.decorator';
 
 @Controller('upload')
 export class UploadController {
@@ -46,7 +46,6 @@ export class UploadController {
         originalName: result.originalName,
         size: result.size,
         type: result.type,
-        folder: folder,
       };
     } catch (error) {
       console.error('文件上传失败:', error);
@@ -55,53 +54,6 @@ export class UploadController {
       }
       throw new HttpException(
         error.message || '文件上传失败',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  /**
-   * 图片上传接口（专门用于图片）
-   * @param file 上传的图片文件
-   * @param body 包含folder参数
-   * @returns 上传结果
-   */
-  @Public()
-  @Post('image')
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadImage(
-    @UploadedFile() file: Express.Multer.File,
-    @Body() body: { folder?: string },
-  ) {
-    try {
-      if (!file) {
-        throw new HttpException('没有接收到文件', HttpStatus.BAD_REQUEST);
-      }
-
-      // 验证是否为图片文件
-      if (!file.mimetype.startsWith('image/')) {
-        throw new HttpException('只能上传图片文件', HttpStatus.BAD_REQUEST);
-      }
-
-      const folder = body.folder || UPLOAD_CONFIG.imageFolder;
-
-      const result = await this.ossService.uploadFile(file, folder);
-
-      return {
-        url: result.url,
-        name: result.name,
-        originalName: result.originalName,
-        size: result.size,
-        type: result.type,
-        folder: folder,
-      };
-    } catch (error) {
-      console.error('图片上传失败:', error);
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new HttpException(
-        error.message || '图片上传失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

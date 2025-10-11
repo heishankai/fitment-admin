@@ -13,7 +13,7 @@ export class CraftsmanController {
    * @param craftsman_name 工匠姓名(模糊匹配)
    * @param craftsman_phone 工匠电话(精准匹配)
    * @param pageIndex 页码(从1开始)
-   * @param pageSize 页大小(默认20条/页)
+   * @param pageSize 页大小(默认10条/页)
    * @returns 分页结果
    */
   @Post('page')

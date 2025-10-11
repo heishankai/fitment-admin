@@ -1,6 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { WechatUserService } from './wechat-user.service';
-import { Public } from '../../admin/auth/public.decorator';
+import { Public } from '../auth/public.decorator';
 
 @Controller('wechat/wechat-user')
 export class WechatUserController {

@@ -14,6 +14,9 @@ export class WechatUser {
   @Column({ unique: true })
   openid: string;
 
+  @Column({ unique: true, nullable: true })
+  phone: string;
+
   @Column({ nullable: true })
   nickname: string;
 

@@ -7,7 +7,7 @@ import { AuthService } from './auth.service';
 // 导入权限守卫(用于权限控制)
 import { AuthGuard } from './auth.guard';
 import { UserModule } from '../user/user.module';
-import { JWT_CONFIG } from '../../common/constants/app.constants';
+import { JWT_CONFIG } from '../common/constants/app.constants';
 
 @Module({
   imports: [

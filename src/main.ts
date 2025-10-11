@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
-import { HttpExceptionFilter } from './exception/http-exception.filter';
+import { HttpExceptionFilter } from './common/exception/http-exception.filter';
 
 /**
  * 应用程序的入口文件，它使用核心函数 NestFactory 来创建 Nest 应用程序实例。
@@ -12,7 +12,7 @@ async function bootstrap() {
 
   // 2. 全局注册响应拦截器
   app.useGlobalInterceptors(new ResponseInterceptor());
-  
+
   // 3. 全局注册异常过滤器
   app.useGlobalFilters(new HttpExceptionFilter());
 
@@ -20,8 +20,18 @@ async function bootstrap() {
   app.enableCors({
     origin: true, // 允许所有来源，生产环境建议指定具体域名
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'X-Requested-With',
+      'Origin',
+      'Access-Control-Request-Method',
+      'Access-Control-Request-Headers',
+    ],
     credentials: true, // 允许携带凭证
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
 
   // 5. 监听端口，启动应用
