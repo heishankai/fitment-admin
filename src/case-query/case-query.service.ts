@@ -15,7 +15,7 @@ export class CaseQueryService {
 
   /**
    * 分页查询案例查询记录
-   * @param queryDto 查询参数 {pageIndex, pageSize, housing_name, city_code}
+   * @param queryDto 查询参数 {pageIndex, pageSize, housing_name, city_code, housing_type, city_name}
    * @returns 分页结果
    */
   async getCaseQueriesByPage(queryDto: QueryCaseQueryDto): Promise<any> {
@@ -26,6 +26,8 @@ export class CaseQueryService {
         pageSize = 10,
         housing_name = '',
         city_code = '',
+        housing_type = '',
+        city_name = '',
       } = queryDto;
 
       // 创建查询构建器
@@ -40,6 +42,16 @@ export class CaseQueryService {
       if (city_code) {
         query.andWhere('case_query.city_code = :city_code', {
           city_code,
+        });
+      }
+      if (housing_type) {
+        query.andWhere('case_query.housing_type LIKE :housing_type', {
+          housing_type: `%${housing_type}%`,
+        });
+      }
+      if (city_name) {
+        query.andWhere('case_query.city_name = :city_name', {
+          city_name,
         });
       }
 
@@ -109,7 +121,6 @@ export class CaseQueryService {
   async findOne(id: number): Promise<CaseQuery> {
     const caseQuery = await this.caseQueryRepository.findOne({
       where: { id },
-      relations: ['createdBy', 'updatedBy'],
     });
 
     if (!caseQuery) {
@@ -125,7 +136,10 @@ export class CaseQueryService {
    * @param updateDto 更新数据
    * @returns null，由全局拦截器包装成标准响应
    */
-  async updateCaseQuery(id: number, updateDto: UpdateCaseQueryDto): Promise<null> {
+  async updateCaseQuery(
+    id: number,
+    updateDto: UpdateCaseQueryDto,
+  ): Promise<null> {
     try {
       // 先检查记录是否存在
       const caseQuery = await this.caseQueryRepository.findOne({

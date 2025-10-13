@@ -15,6 +15,10 @@ export class CaseQuery {
   @Column()
   housing_name: string;
 
+  // 户型
+  @Column()
+  housing_type: string;
+
   // 改造类型 : 1 新房装修 2 旧房改造
   @Column()
   remodel_type: number;

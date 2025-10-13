@@ -35,4 +35,18 @@ export class QueryCaseQueryDto {
   @IsOptional()
   @IsString({ message: '城市代码必须是字符串' })
   city_code?: string;
+
+  /**
+   * 户型（模糊匹配）
+   */
+  @IsOptional()
+  @IsString({ message: '户型必须是字符串' })
+  housing_type?: string;
+
+  /**
+   * 城市名称（精确匹配）
+   */
+  @IsOptional()
+  @IsString({ message: '城市名称必须是字符串' })
+  city_name?: string;
 }

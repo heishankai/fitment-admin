@@ -15,14 +15,16 @@ import { CaseQuery } from './case-query.entity';
 import { CreateCaseQueryDto } from './dto/create-case-query.dto';
 import { QueryCaseQueryDto } from './dto/query-case-query.dto';
 import { UpdateCaseQueryDto } from './dto/update-case-query.dto';
+import { Public } from '../auth/public.decorator';
 
+@Public()
 @Controller('case-query')
 export class CaseQueryController {
   constructor(private readonly caseQueryService: CaseQueryService) {}
 
   /**
    * 分页查询案例查询记录
-   * @param queryDto 查询参数 {pageIndex, pageSize, housing_name, city_code}
+   * @param queryDto 查询参数 {pageIndex, pageSize, housing_name, city_code, housing_type, city_name}
    * @returns 分页结果
    */
   @Post('page')

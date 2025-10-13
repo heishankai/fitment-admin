@@ -26,6 +26,13 @@ export class UpdateCaseQueryDto {
   city_name?: string;
 
   /**
+   * 户型
+   */
+  @IsOptional()
+  @IsString({ message: '户型必须是字符串' })
+  housing_type?: string;
+
+  /**
    * 城市代码
    */
   @IsOptional()
