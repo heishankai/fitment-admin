@@ -12,10 +12,11 @@ import { UploadModule } from './common/upload/upload.module';
 import {
   UserModule,
   AuthModule,
-  CraftsmanModule,
   WechatUserModule,
   CaseQueryModule,
   CityModule,
+  WholeHouseConfigModule,
+  PartialRenovationConfigModule,
 } from './index';
 // 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
@@ -36,14 +37,16 @@ import { DATABASE_CONFIG } from './common/constants/app.constants';
       synchronize: DATABASE_CONFIG.synchronize,
       autoLoadEntities: DATABASE_CONFIG.autoLoadEntities,
     }),
-    UserModule,
-    AuthModule,
-    CraftsmanModule,
+    UserModule, // 用户模块
+    AuthModule, // 权限模块
     UploadModule, // 公共文件上传模块
     WechatUserModule, // 微信用户模块
     CaseQueryModule, // 案例查询模块
     CityModule, // 城市模块
-  ], // 导入其他模块的数组
+    WholeHouseConfigModule, // 整装配置模块
+    PartialRenovationConfigModule, // 局部装修配置模块
+  ],
+  // 导入其他模块的数组
   controllers: [AppController], // 注册控制器，处理 HTTP 请求
   providers: [AppService], // 注册服务提供者，包含业务逻辑
 })
