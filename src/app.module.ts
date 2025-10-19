@@ -15,8 +15,10 @@ import {
   WechatUserModule,
   CaseQueryModule,
   CityModule,
-  WholeHouseConfigModule,
-  PartialRenovationConfigModule,
+  CategoryConfigModule,
+  CommodityConfigModule,
+  WorkTypeModule,
+  CraftsmanQueryModule,
 } from './index';
 // 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
@@ -43,8 +45,10 @@ import { DATABASE_CONFIG } from './common/constants/app.constants';
     WechatUserModule, // 微信用户模块
     CaseQueryModule, // 案例查询模块
     CityModule, // 城市模块
-    WholeHouseConfigModule, // 整装配置模块
-    PartialRenovationConfigModule, // 局部装修配置模块
+    CategoryConfigModule, // 类目配置模块
+    CommodityConfigModule, // 商品配置模块
+    WorkTypeModule, // 工种类型模块
+    CraftsmanQueryModule, // 工匠查询模块
   ],
   // 导入其他模块的数组
   controllers: [AppController], // 注册控制器，处理 HTTP 请求

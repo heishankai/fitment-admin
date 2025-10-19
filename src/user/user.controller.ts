@@ -12,7 +12,9 @@ import {
 import { UserService } from './user.service';
 import { User } from './user.entity';
 import { DeleteResult } from 'typeorm';
+import { Public } from '../auth/public.decorator';
 
+@Public()
 @Controller('admin/users')
 export class UserController {
   constructor(private readonly userService: UserService) {}

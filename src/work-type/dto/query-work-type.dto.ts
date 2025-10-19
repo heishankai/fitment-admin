@@ -2,9 +2,9 @@ import { IsOptional, IsString, IsNumber, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
- * 分页查询全屋配置DTO
+ * 分页查询工种类型DTO
  */
-export class QueryWholeHouseConfigDto {
+export class QueryWorkTypeDto {
   /**
    * 页码，从1开始
    */
@@ -23,9 +23,9 @@ export class QueryWholeHouseConfigDto {
   pageSize: number;
 
   /**
-   * 分类名称（模糊匹配）
+   * 工种名称（模糊匹配）
    */
   @IsOptional()
-  @IsString({ message: '分类名称必须是字符串' })
-  category_name?: string;
+  @IsString({ message: '工种名称必须是字符串' })
+  work_title?: string;
 }

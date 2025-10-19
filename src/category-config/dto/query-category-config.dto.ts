@@ -2,9 +2,9 @@ import { IsOptional, IsString, IsNumber, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
- * 分页查询局部装修配置DTO
+ * 分页查询类目配置DTO
  */
-export class QueryPartialRenovationConfigDto {
+export class QueryCategoryConfigDto {
   /**
    * 页码，从1开始
    */
@@ -23,9 +23,9 @@ export class QueryPartialRenovationConfigDto {
   pageSize: number;
 
   /**
-   * 分类名称（模糊匹配）
+   * 类目名称（模糊匹配）
    */
   @IsOptional()
-  @IsString({ message: '分类名称必须是字符串' })
+  @IsString({ message: '类目名称必须是字符串' })
   category_name?: string;
 }
