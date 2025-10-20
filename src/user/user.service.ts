@@ -57,11 +57,7 @@ export class UserService {
    * @param username 用户名
    * @returns 用户信息
    */
-  findByUsername(username: string): Promise<User | null> {
-    const user = this.userRepository.findOneBy({ username });
-    if (!user) {
-      throw new HttpException('用户名不正确', HttpStatus.UNAUTHORIZED);
-    }
-    return user;
+  async findByUsername(username: string): Promise<User | null> {
+    return await this.userRepository.findOneBy({ username });
   }
 }

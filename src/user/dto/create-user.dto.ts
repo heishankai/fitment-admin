@@ -5,3 +5,4 @@ export class CreateUserDto {
   active?: boolean; // 可选字段，默认为 true
   avatar: string;
 }
+
