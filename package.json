@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "engines": {
     "node": "20.19.5",
-    "pnpm": "7.33.3"
+    "pnpm": "7.22.0"
   },
   "scripts": {
     "build": "nest build",
