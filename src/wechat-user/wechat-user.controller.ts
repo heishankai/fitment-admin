@@ -1,7 +1,17 @@
-import { Controller, Get, Post, Query, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Query,
+  Body,
+  Param,
+  ParseIntPipe,
+} from '@nestjs/common';
 import { WechatUserService } from './wechat-user.service';
 import { Public } from '../auth/public.decorator';
 import { GetPhoneDto } from './dto/get-phone.dto';
+import { UpdateWechatUserDto } from './dto/update-wechat-user.dto';
 
 @Public()
 @Controller('wechat/wechat-user')
@@ -29,5 +39,19 @@ export class WechatUserController {
       body.code,
       body.openid,
     );
+  }
+
+  /**
+   * 根据ID更新微信用户信息
+   * @param id 用户ID
+   * @param body 更新数据（所有字段都是非必填）
+   * @returns 更新后的用户信息
+   */
+  @Put(':id')
+  async updateWechatUser(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdateWechatUserDto,
+  ) {
+    return this.wechatUserService.updateWechatUser(id, body);
   }
 }

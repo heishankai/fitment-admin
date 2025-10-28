@@ -13,12 +13,14 @@ import {
   UserModule,
   AuthModule,
   WechatUserModule,
+  WechatAddressModule,
   CaseQueryModule,
   CityModule,
   CategoryConfigModule,
   CommodityConfigModule,
   WorkTypeModule,
   CraftsmanQueryModule,
+  SwiperConfigModule,
 } from './index';
 // 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
@@ -43,12 +45,14 @@ import { DATABASE_CONFIG } from './common/constants/app.constants';
     AuthModule, // 权限模块
     UploadModule, // 公共文件上传模块
     WechatUserModule, // 微信用户模块
+    WechatAddressModule, // 微信地址模块
     CaseQueryModule, // 案例查询模块
     CityModule, // 城市模块
     CategoryConfigModule, // 类目配置模块
     CommodityConfigModule, // 商品配置模块
     WorkTypeModule, // 工种类型模块
     CraftsmanQueryModule, // 工匠查询模块
+    SwiperConfigModule, // 轮播图配置模块
   ],
   // 导入其他模块的数组
   controllers: [AppController], // 注册控制器，处理 HTTP 请求

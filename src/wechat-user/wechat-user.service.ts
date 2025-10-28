@@ -12,6 +12,7 @@ import {
 } from '../common/constants/app.constants';
 // entity
 import { WechatUser } from './wechat-user.entity';
+import { UpdateWechatUserDto } from './dto/update-wechat-user.dto';
 
 @Injectable()
 export class WechatUserService {
@@ -116,7 +117,7 @@ export class WechatUserService {
           openid,
           phone: phoneNumber,
           nickname: '叮当智装用户',
-          avatar: 'https://via.placeholder.com/100x100/007bff/ffffff?text=用户',
+          avatar: 'https://api.dicebear.com/7.x/miniavs/svg?seed=test',
         });
         user = await this.wechatUserRepository.save(user);
       } else {
@@ -162,6 +163,82 @@ export class WechatUserService {
       }
       throw new HttpException(
         '获取手机号码失败，请稍后重试',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 根据ID更新微信用户信息
+   * @param id 用户ID
+   * @param updateData 更新数据
+   * @returns 更新后的用户信息
+   */
+  async updateWechatUser(id: number, updateData: UpdateWechatUserDto): Promise<WechatUser & { token: string }> {
+    try {
+      // 1. 检查用户是否存在
+      const existingUser = await this.wechatUserRepository.findOne({
+        where: { id },
+      });
+
+      if (!existingUser) {
+        throw new HttpException('用户不存在', HttpStatus.NOT_FOUND);
+      }
+
+      // 2. 过滤掉undefined的字段，只更新有值的字段
+      const updateFields: Partial<WechatUser> = {};
+      
+      if (updateData.openid !== undefined) {
+        updateFields.openid = updateData.openid;
+      }
+      if (updateData.phone !== undefined) {
+        updateFields.phone = updateData.phone;
+      }
+      if (updateData.nickname !== undefined) {
+        updateFields.nickname = updateData.nickname;
+      }
+      if (updateData.avatar !== undefined) {
+        updateFields.avatar = updateData.avatar;
+      }
+      if (updateData.city !== undefined) {
+        updateFields.city = updateData.city;
+      }
+
+      // 3. 执行更新
+      await this.wechatUserRepository.update(id, updateFields);
+
+      // 4. 返回更新后的用户信息
+      const updatedUser = await this.wechatUserRepository.findOne({
+        where: { id },
+      });
+
+      if (!updatedUser) {
+        throw new HttpException('用户信息获取失败', HttpStatus.INTERNAL_SERVER_ERROR);
+      }
+
+      // 5. 生成新的JWT token
+      const payload = {
+        userId: updatedUser.id,
+        openid: updatedUser.openid,
+        type: 'wechat',
+      };
+
+      const token = this.jwtService.sign(payload, {
+        secret: JWT_CONFIG.secret,
+        expiresIn: JWT_CONFIG.expiresIn,
+      });
+
+      // 6. 返回用户信息（包含token）
+      return {
+        ...updatedUser,
+        token,
+      } as WechatUser & { token: string };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '更新用户信息失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
