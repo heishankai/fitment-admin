@@ -5,7 +5,19 @@ import {
   IsOptional,
   IsNotEmpty,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class ServiceDetailDto {
+  @IsString()
+  @IsOptional()
+  service_desc?: string;
+
+  @IsString()
+  @IsNotEmpty({ message: '服务图片不能为空' })
+  service_image: string;
+}
 
 export class CreateWorkTypeDto {
   // 工种名称
@@ -35,5 +47,7 @@ export class CreateWorkTypeDto {
   // 服务详情
   @IsArray()
   @IsOptional()
-  service_details?: string[];
+  @ValidateNested({ each: true })
+  @Type(() => ServiceDetailDto)
+  service_details?: ServiceDetailDto[];
 }

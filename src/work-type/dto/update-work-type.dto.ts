@@ -1,4 +1,15 @@
-import { IsOptional, IsString, IsNumber, IsArray, Min } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsArray, Min, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class ServiceDetailDto {
+  @IsString()
+  @IsOptional()
+  service_desc?: string;
+
+  @IsString()
+  @IsOptional()
+  service_image?: string;
+}
 
 /**
  * 更新工种类型DTO
@@ -43,5 +54,7 @@ export class UpdateWorkTypeDto {
    */
   @IsOptional()
   @IsArray({ message: '服务详情必须是数组' })
-  service_details?: string[];
+  @ValidateNested({ each: true })
+  @Type(() => ServiceDetailDto)
+  service_details?: ServiceDetailDto[];
 }
