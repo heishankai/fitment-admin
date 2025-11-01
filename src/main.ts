@@ -1,14 +1,18 @@
-import { NestFactory } from '@nestjs/core';
+import { NestApplication, NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { HttpExceptionFilter } from './common/exception/http-exception.filter';
+import { NestApplicationContextOptions } from '@nestjs/common/interfaces/nest-application-context-options.interface';
+import { NestExpressApplication } from '@nestjs/platform-express';
 
 /**
  * 应用程序的入口文件，它使用核心函数 NestFactory 来创建 Nest 应用程序实例。
  */
 async function bootstrap() {
   // 1. 创建应用实例
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  app.useStaticAssets('pages');
 
   // 2. 全局注册响应拦截器
   app.useGlobalInterceptors(new ResponseInterceptor());

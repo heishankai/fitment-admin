@@ -24,6 +24,7 @@ import {
 } from './index';
 // 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
+import { WstModule } from './wst/wst.module';
 
 /**
  * 应用程序的根模块
@@ -52,7 +53,8 @@ import { DATABASE_CONFIG } from './common/constants/app.constants';
     CommodityConfigModule, // 商品配置模块
     WorkTypeModule, // 工种类型模块
     CraftsmanQueryModule, // 工匠查询模块
-    SwiperConfigModule, // 轮播图配置模块
+    SwiperConfigModule,
+    WstModule, // 轮播图配置模块
   ],
   // 导入其他模块的数组
   controllers: [AppController], // 注册控制器，处理 HTTP 请求
