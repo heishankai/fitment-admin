@@ -1,14 +1,20 @@
-import { IsOptional, IsString, IsNumber, IsArray, Min, ValidateNested } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsArray, Min, ValidateNested, IsNotEmpty, ArrayMinSize } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class ServiceDetailDto {
   @IsString()
   @IsOptional()
-  service_desc?: string;
+  service_title?: string;
 
   @IsString()
   @IsOptional()
-  service_image?: string;
+  service_desc?: string;
+
+  @IsArray({ message: '服务图片必须是数组' })
+  @IsNotEmpty({ message: '服务图片不能为空' })
+  @ArrayMinSize(1, { message: '服务图片至少需要1张' })
+  @IsString({ each: true, message: '服务图片必须是字符串数组' })
+  service_image: string[];
 }
 
 /**

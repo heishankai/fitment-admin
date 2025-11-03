@@ -36,7 +36,11 @@ export class CommodityConfig {
   commodity_images: string[]; // 商品主图（最多4张 数组类型）
 
   @Column('simple-json')
-  commodity_detail_images: string[]; // 商品详情图（最多10张 数组类型）
+  commodity_details: {
+    title?: string;
+    desc?: string;
+    image: string[];
+  }[]; // 商品详情
 
   @CreateDateColumn()
   createdAt: Date;

@@ -1,13 +1,32 @@
 import { 
   IsOptional, 
+  IsNotEmpty,
   IsString, 
   IsNumber, 
   IsArray, 
   MaxLength, 
   ArrayMaxSize, 
   ArrayMinSize, 
-  Min 
+  Min,
+  ValidateNested 
 } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class CommodityDetailDto {
+  @IsString()
+  @IsOptional()
+  title?: string;
+
+  @IsString()
+  @IsOptional()
+  desc?: string;
+
+  @IsArray({ message: '图片必须是数组' })
+  @IsNotEmpty({ message: '图片不能为空' })
+  @ArrayMinSize(1, { message: '图片至少需要1张' })
+  @IsString({ each: true, message: '图片必须是字符串数组' })
+  image: string[];
+}
 
 /**
  * 更新商品配置DTO
@@ -77,11 +96,11 @@ export class UpdateCommodityConfigDto {
   commodity_images?: string[];
 
   /**
-   * 商品详情图
+   * 商品详情
    */
   @IsOptional()
-  @IsArray({ message: '商品详情图必须是数组' })
-  @ArrayMaxSize(10, { message: '商品详情图最多10张' })
-  @IsString({ each: true, message: '商品详情图必须是字符串数组' })
-  commodity_detail_images?: string[];
+  @IsArray({ message: '商品详情必须是数组' })
+  @ValidateNested({ each: true })
+  @Type(() => CommodityDetailDto)
+  commodity_details?: CommodityDetailDto[];
 }

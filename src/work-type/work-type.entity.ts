@@ -33,7 +33,11 @@ export class WorkType {
 
   // 服务详情
   @Column({ type: 'json', nullable: true })
-  service_details: { service_desc: string; service_image: string }[];
+  service_details: {
+    service_title?: string;
+    service_desc?: string;
+    service_image: string[];
+  }[];
 
   // 创建时间
   @CreateDateColumn()
