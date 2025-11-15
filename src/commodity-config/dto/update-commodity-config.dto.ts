@@ -65,7 +65,7 @@ export class UpdateCommodityConfigDto {
    */
   @IsOptional()
   @IsString({ message: '商品描述必须是字符串' })
-  @MaxLength(200, { message: '商品描述最多200字' })
+  @MaxLength(800, { message: '商品描述最多800字' })
   commodity_description?: string;
 
   /**
@@ -73,7 +73,7 @@ export class UpdateCommodityConfigDto {
    */
   @IsOptional()
   @IsString({ message: '服务保障必须是字符串' })
-  @MaxLength(200, { message: '服务保障最多200字' })
+  @MaxLength(800, { message: '服务保障最多800字' })
   service_guarantee?: string;
 
   /**

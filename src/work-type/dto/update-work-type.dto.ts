@@ -17,6 +17,24 @@ class ServiceDetailDto {
   service_image: string[];
 }
 
+class WorkKindDto {
+  @IsString()
+  @IsOptional()
+  label?: string;
+
+  @IsOptional()
+  value?: string | number;
+}
+
+class LabourCostDto {
+  @IsString()
+  @IsOptional()
+  label?: string;
+
+  @IsOptional()
+  value?: string | number;
+}
+
 /**
  * 更新工种类型DTO
  */
@@ -63,4 +81,20 @@ export class UpdateWorkTypeDto {
   @ValidateNested({ each: true })
   @Type(() => ServiceDetailDto)
   service_details?: ServiceDetailDto[];
+
+  /**
+   * 工种
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WorkKindDto)
+  work_kind?: WorkKindDto;
+
+  /**
+   * 人工成本
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LabourCostDto)
+  labour_cost?: LabourCostDto;
 }

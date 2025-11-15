@@ -12,6 +12,7 @@ import { UploadModule } from './common/upload/upload.module';
 import {
   UserModule,
   AuthModule,
+  SmsModule,
   WechatUserModule,
   WechatAddressModule,
   CaseQueryModule,
@@ -19,6 +20,8 @@ import {
   CategoryConfigModule,
   CommodityConfigModule,
   WorkTypeModule,
+  WorkKindModule,
+  LabourCostModule,
   CraftsmanQueryModule,
   SwiperConfigModule,
 } from './index';
@@ -44,6 +47,7 @@ import { WstModule } from './wst/wst.module';
     }),
     UserModule, // 用户模块
     AuthModule, // 权限模块
+    SmsModule, // 短信模块
     UploadModule, // 公共文件上传模块
     WechatUserModule, // 微信用户模块
     WechatAddressModule, // 微信地址模块
@@ -52,6 +56,8 @@ import { WstModule } from './wst/wst.module';
     CategoryConfigModule, // 类目配置模块
     CommodityConfigModule, // 商品配置模块
     WorkTypeModule, // 工种类型模块
+    WorkKindModule, // 工种配置模块
+    LabourCostModule, // 人工成本配置模块
     CraftsmanQueryModule, // 工匠查询模块
     SwiperConfigModule,
     WstModule, // 轮播图配置模块

@@ -26,6 +26,24 @@ class ServiceDetailDto {
   service_image: string[];
 }
 
+class WorkKindDto {
+  @IsString()
+  @IsNotEmpty({ message: '工种标签不能为空' })
+  label: string;
+
+  @IsNotEmpty({ message: '工种值不能为空' })
+  value: string | number;
+}
+
+class LabourCostDto {
+  @IsString()
+  @IsNotEmpty({ message: '人工成本标签不能为空' })
+  label: string;
+
+  @IsNotEmpty({ message: '人工成本值不能为空' })
+  value: string | number;
+}
+
 export class CreateWorkTypeDto {
   // 工种名称
   @IsString()
@@ -57,4 +75,16 @@ export class CreateWorkTypeDto {
   @ValidateNested({ each: true })
   @Type(() => ServiceDetailDto)
   service_details?: ServiceDetailDto[];
+
+  // 工种
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WorkKindDto)
+  work_kind?: WorkKindDto;
+
+  // 人工成本
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LabourCostDto)
+  labour_cost?: LabourCostDto;
 }

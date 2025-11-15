@@ -47,13 +47,13 @@ export class CreateCommodityConfigDto {
 
   @IsString()
   @IsNotEmpty({ message: '商品描述不能为空' })
-  @MaxLength(200, { message: '商品描述最多200字' })
-  commodity_description: string; // 商品描述（最多200字）
+  @MaxLength(800, { message: '商品描述最多800字' })
+  commodity_description: string; // 商品描述（最多800字）
 
   @IsString()
   @IsNotEmpty({ message: '服务保障不能为空' })
-  @MaxLength(200, { message: '服务保障最多200字' })
-  service_guarantee: string; // 服务保障（最多200字）
+  @MaxLength(800, { message: '服务保障最多800字' })
+  service_guarantee: string; // 服务保障（最多800字）
 
   @IsArray({ message: '商品封面必须是数组' })
   @ArrayMinSize(1, { message: '商品封面至少需要1张' })

@@ -39,6 +39,20 @@ export class WorkType {
     service_image: string[];
   }[];
 
+  // 工种
+  @Column({ type: 'json', nullable: true })
+  work_kind: {
+    label: string;
+    value: string | number;
+  };
+
+  // 人工成本
+  @Column({ type: 'json', nullable: true })
+  labour_cost: {
+    label: string;
+    value: string | number;
+  };
+
   // 创建时间
   @CreateDateColumn()
   createdAt: Date;
