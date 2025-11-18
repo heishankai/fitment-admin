@@ -87,4 +87,13 @@ export class CreateWorkTypeDto {
   @ValidateNested()
   @Type(() => LabourCostDto)
   labour_cost?: LabourCostDto;
+
+  // 是否设置最低价
+  @IsString()
+  @IsOptional()
+  is_set_minimum_price?: string; // '0':否, '1':是
+
+  // 最低价格
+  @IsOptional()
+  minimum_price?: string | number;
 }

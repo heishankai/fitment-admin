@@ -97,4 +97,17 @@ export class UpdateWorkTypeDto {
   @ValidateNested()
   @Type(() => LabourCostDto)
   labour_cost?: LabourCostDto;
+
+  /**
+   * 是否设置最低价
+   */
+  @IsOptional()
+  @IsString({ message: '是否设置最低价必须是字符串' })
+  is_set_minimum_price?: string; // '0':否, '1':是
+
+  /**
+   * 最低价格
+   */
+  @IsOptional()
+  minimum_price?: string | number;
 }

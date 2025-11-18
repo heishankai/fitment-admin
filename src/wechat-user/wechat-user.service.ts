@@ -117,7 +117,8 @@ export class WechatUserService {
           openid,
           phone: phoneNumber,
           nickname: '叮当智装用户',
-          avatar: 'https://api.dicebear.com/7.x/miniavs/svg?seed=test',
+          avatar:
+            'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',
         });
         user = await this.wechatUserRepository.save(user);
       } else {
@@ -174,7 +175,10 @@ export class WechatUserService {
    * @param updateData 更新数据
    * @returns 更新后的用户信息
    */
-  async updateWechatUser(id: number, updateData: UpdateWechatUserDto): Promise<WechatUser & { token: string }> {
+  async updateWechatUser(
+    id: number,
+    updateData: UpdateWechatUserDto,
+  ): Promise<WechatUser & { token: string }> {
     try {
       // 1. 检查用户是否存在
       const existingUser = await this.wechatUserRepository.findOne({
@@ -187,7 +191,7 @@ export class WechatUserService {
 
       // 2. 过滤掉undefined的字段，只更新有值的字段
       const updateFields: Partial<WechatUser> = {};
-      
+
       if (updateData.openid !== undefined) {
         updateFields.openid = updateData.openid;
       }
@@ -213,7 +217,10 @@ export class WechatUserService {
       });
 
       if (!updatedUser) {
-        throw new HttpException('用户信息获取失败', HttpStatus.INTERNAL_SERVER_ERROR);
+        throw new HttpException(
+          '用户信息获取失败',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
       }
 
       // 5. 生成新的JWT token

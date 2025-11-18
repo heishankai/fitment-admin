@@ -53,6 +53,14 @@ export class WorkType {
     value: string | number;
   };
 
+  // 是否设置最低价
+  @Column({ type: 'varchar', length: 1, nullable: true, default: '0' })
+  is_set_minimum_price?: string; // '0':否, '1':是
+
+  // 最低价格
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  minimum_price?: string | number;
+
   // 创建时间
   @CreateDateColumn()
   createdAt: Date;

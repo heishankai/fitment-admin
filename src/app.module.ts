@@ -23,6 +23,7 @@ import {
   WorkKindModule,
   LabourCostModule,
   CraftsmanQueryModule,
+  CraftsmanUserModule,
   SwiperConfigModule,
 } from './index';
 // 导入数据库配置
@@ -59,6 +60,7 @@ import { WstModule } from './wst/wst.module';
     WorkKindModule, // 工种配置模块
     LabourCostModule, // 人工成本配置模块
     CraftsmanQueryModule, // 工匠查询模块
+    CraftsmanUserModule, // 工匠用户模块
     SwiperConfigModule,
     WstModule, // 轮播图配置模块
   ],

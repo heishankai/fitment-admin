@@ -12,4 +12,5 @@ export { WorkTypeModule } from './work-type/work-type.module';
 export { WorkKindModule } from './work-kind/work-kind.module';
 export { LabourCostModule } from './labour-cost/labour-cost.module';
 export { CraftsmanQueryModule } from './craftsman-query/craftsman-query.module';
+export { CraftsmanUserModule } from './craftsman-user/craftsman-user.module';
 export { SwiperConfigModule } from './swiper-config/swiper-config.module';

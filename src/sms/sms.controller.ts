@@ -32,15 +32,14 @@ export class SmsController {
         code,
       );
 
-      // 这里可以将验证码存储到 Redis 或数据库中，用于后续验证
-      // 暂时只返回成功信息，不返回验证码（生产环境应该这样）
-      // TODO: 将验证码存储到 Redis，设置过期时间（如5分钟）
+      // 存储验证码，设置5分钟过期时间
+      this.smsService.storeVerificationCode(body.phone, code);
 
       return {
         success: true,
         message: result.message,
         // 开发环境可以返回验证码，生产环境应该移除
-        // code: code, // 仅用于测试，生产环境请删除此行
+        code: code, // 仅用于测试，生产环境请删除此行
       };
     } catch (error) {
       if (error instanceof HttpException) {
