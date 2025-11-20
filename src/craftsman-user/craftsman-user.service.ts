@@ -1,4 +1,4 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
@@ -8,6 +8,7 @@ import { JWT_CONFIG } from '../common/constants/app.constants';
 import { CraftsmanUser } from './craftsman-user.entity';
 import { LoginDto } from './dto/login.dto';
 import { UpdateCraftsmanUserDto } from './dto/update-craftsman-user.dto';
+import { QueryCraftsmanUserDto } from './dto/query-craftsman-user.dto';
 import { SmsService } from '../sms/sms.service';
 
 @Injectable()
@@ -97,6 +98,8 @@ export class CraftsmanUserService {
     phone: string;
     nickname: string;
     avatar: string;
+    isVerified: boolean;
+    isSkillVerified: boolean;
   }> {
     try {
       const user = await this.craftsmanUserRepository.findOne({
@@ -113,6 +116,8 @@ export class CraftsmanUserService {
         avatar:
           user.avatar ||
           'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',
+        isVerified: user.isVerified || false,
+        isSkillVerified: user.isSkillVerified || false,
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -168,6 +173,123 @@ export class CraftsmanUserService {
         '更新用户信息失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    }
+  }
+
+  /**
+   * 分页查询工匠用户
+   * @param queryDto 查询参数 {pageIndex, pageSize, nickname, phone}
+   * @returns 分页结果
+   */
+  async getCraftsmanUsersByPage(
+    queryDto: QueryCraftsmanUserDto,
+  ): Promise<any> {
+    try {
+      // 获取参数
+      const {
+        pageIndex = 1,
+        pageSize = 10,
+        nickname = '',
+        phone = '',
+      } = queryDto;
+
+      // 创建查询构建器
+      const query =
+        this.craftsmanUserRepository.createQueryBuilder('craftsman_user');
+
+      // 添加筛选条件
+      if (nickname) {
+        query.andWhere('craftsman_user.nickname LIKE :nickname', {
+          nickname: `%${nickname}%`,
+        });
+      }
+      if (phone) {
+        query.andWhere('craftsman_user.phone LIKE :phone', {
+          phone: `%${phone}%`,
+        });
+      }
+
+      // 按创建时间倒序排列
+      query.orderBy('craftsman_user.createdAt', 'DESC');
+
+      // 查询总数
+      const total = await query.getCount();
+
+      // 查询数据（分页）
+      const data = await query
+        .skip((pageIndex - 1) * pageSize)
+        .take(pageSize)
+        .getMany();
+
+      // 返回结果（包含分页信息的完整格式）
+      return {
+        success: true,
+        data,
+        code: 200,
+        message: null,
+        pageIndex,
+        pageSize,
+        total,
+        pageTotal: Math.ceil(total / pageSize),
+      };
+    } catch (error) {
+      console.error('分页查询错误:', error);
+      return {
+        success: false,
+        data: null,
+        code: 500,
+        message: '分页查询失败: ' + error.message,
+        pageIndex: 1,
+        pageSize: 10,
+        total: 0,
+        pageTotal: 0,
+      };
+    }
+  }
+
+  /**
+   * 根据ID获取工匠用户
+   * @param id 工匠用户ID
+   * @returns 工匠用户信息
+   */
+  async findOne(id: number): Promise<CraftsmanUser> {
+    const user = await this.craftsmanUserRepository.findOne({
+      where: { id },
+    });
+
+    if (!user) {
+      throw new BadRequestException('工匠用户不存在');
+    }
+
+    return user;
+  }
+
+  /**
+   * 根据ID删除工匠用户
+   * @param id 工匠用户ID
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  async deleteCraftsmanUser(id: number): Promise<null> {
+    try {
+      // 先检查记录是否存在
+      const user = await this.craftsmanUserRepository.findOne({
+        where: { id },
+      });
+
+      if (!user) {
+        throw new BadRequestException('工匠用户不存在');
+      }
+
+      // 删除记录
+      await this.craftsmanUserRepository.remove(user);
+
+      // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
+      return null;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('删除工匠用户失败: ' + error.message);
     }
   }
 }

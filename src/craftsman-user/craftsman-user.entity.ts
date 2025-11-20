@@ -24,6 +24,16 @@ export class CraftsmanUser {
   })
   avatar: string;
 
+  @Column({ nullable: true, default: false })
+  isVerified: boolean;
+
+  @Column({ nullable: true, default: false })
+  isSkillVerified: boolean;
+
+  @Column({ nullable: true, default: false })
+  isHomePageVerified: boolean;
+
+
   @CreateDateColumn()
   createdAt: Date;
 

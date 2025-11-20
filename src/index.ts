@@ -11,6 +11,8 @@ export { CommodityConfigModule } from './commodity-config/commodity-config.modul
 export { WorkTypeModule } from './work-type/work-type.module';
 export { WorkKindModule } from './work-kind/work-kind.module';
 export { LabourCostModule } from './labour-cost/labour-cost.module';
-export { CraftsmanQueryModule } from './craftsman-query/craftsman-query.module';
 export { CraftsmanUserModule } from './craftsman-user/craftsman-user.module';
 export { SwiperConfigModule } from './swiper-config/swiper-config.module';
+export { IsVerifiedModule } from './is-verified/is-verified.module';
+export { IsSkillVerifiedModule } from './is-skill-verified/is-skill-verified.module';
+export { HomePageAuditModule } from './home-page-audit/home-page-audit.module';

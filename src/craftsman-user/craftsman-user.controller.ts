@@ -3,15 +3,21 @@ import {
   Post,
   Get,
   Put,
+  Delete,
   Body,
+  Param,
   Request,
   HttpException,
   HttpStatus,
+  ValidationPipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { Public } from '../auth/public.decorator';
 import { CraftsmanUserService } from './craftsman-user.service';
 import { LoginDto } from './dto/login.dto';
 import { UpdateCraftsmanUserDto } from './dto/update-craftsman-user.dto';
+import { QueryCraftsmanUserDto } from './dto/query-craftsman-user.dto';
+import { CraftsmanUser } from './craftsman-user.entity';
 
 @Controller('craftsman-user')
 export class CraftsmanUserController {
@@ -87,5 +93,39 @@ export class CraftsmanUserController {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  /**
+   * 分页查询工匠用户
+   * @param queryDto 查询参数 {pageIndex, pageSize, nickname, phone}
+   * @returns 分页结果
+   */
+  @Post('page')
+  async getCraftsmanUsersByPage(
+    @Body(ValidationPipe) queryDto: QueryCraftsmanUserDto,
+  ): Promise<any> {
+    return await this.craftsmanUserService.getCraftsmanUsersByPage(queryDto);
+  }
+
+  /**
+   * 根据ID获取工匠用户
+   * @param id 工匠用户ID
+   * @returns 工匠用户信息
+   */
+  @Get(':id')
+  async findOne(@Param('id', ParseIntPipe) id: number): Promise<CraftsmanUser> {
+    return await this.craftsmanUserService.findOne(id);
+  }
+
+  /**
+   * 根据ID删除工匠用户
+   * @param id 工匠用户ID
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  @Delete(':id')
+  async deleteCraftsmanUser(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<null> {
+    return await this.craftsmanUserService.deleteCraftsmanUser(id);
   }
 }

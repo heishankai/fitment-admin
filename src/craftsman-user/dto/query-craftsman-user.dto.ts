@@ -2,9 +2,9 @@ import { IsOptional, IsString, IsNumber, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
- * 分页查询工匠查询DTO
+ * 分页查询工匠用户DTO
  */
-export class QueryCraftsmanQueryDto {
+export class QueryCraftsmanUserDto {
   /**
    * 页码，从1开始
    */
@@ -23,30 +23,17 @@ export class QueryCraftsmanQueryDto {
   pageSize: number;
 
   /**
-   * 工匠名称（模糊匹配）
+   * 用户昵称（模糊匹配）
    */
   @IsOptional()
-  @IsString({ message: '工匠名称必须是字符串' })
-  craftsman_name?: string;
+  @IsString({ message: '用户昵称必须是字符串' })
+  nickname?: string;
 
   /**
-   * 技能（模糊匹配）
+   * 手机号（模糊匹配）
    */
   @IsOptional()
-  @IsString({ message: '技能必须是字符串' })
-  craftsman_skill?: string;
-
-  /**
-   * 城市名称（精确匹配）
-   */
-  @IsOptional()
-  @IsString({ message: '城市名称必须是字符串' })
-  city_name?: string;
-
-  /**
-   * 城市代码（精确匹配）
-   */
-  @IsOptional()
-  @IsString({ message: '城市代码必须是字符串' })
-  city_code?: string;
+  @IsString({ message: '手机号必须是字符串' })
+  phone?: string;
 }
+
