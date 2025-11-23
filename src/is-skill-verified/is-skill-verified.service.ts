@@ -6,6 +6,7 @@ import { CraftsmanUser } from '../craftsman-user/craftsman-user.entity';
 import { CreateIsSkillVerifiedDto } from './dto/create-is-skill-verified.dto';
 import { UpdateIsSkillVerifiedDto } from './dto/update-is-skill-verified.dto';
 import { QueryIsSkillVerifiedDto } from './dto/query-is-skill-verified.dto';
+import { SystemNotificationService } from '../system-notification/system-notification.service';
 
 @Injectable()
 export class IsSkillVerifiedService {
@@ -14,6 +15,7 @@ export class IsSkillVerifiedService {
     private readonly isSkillVerifiedRepository: Repository<IsSkillVerified>,
     @InjectRepository(CraftsmanUser)
     private readonly craftsmanUserRepository: Repository<CraftsmanUser>,
+    private readonly notificationService: SystemNotificationService,
   ) {}
 
   /**
@@ -281,6 +283,15 @@ export class IsSkillVerifiedService {
       // 更新用户的 isSkillVerified 状态为 true
       await this.craftsmanUserRepository.update(userId, {
         isSkillVerified: true,
+      });
+
+      // 创建系统通知
+      await this.notificationService.create({
+        userId,
+        notification_type: 'is-skill-verified',
+        title: '技能认证审核通过',
+        content: '恭喜您，您的技能认证已通过审核！',
+        is_read: false,
       });
 
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }

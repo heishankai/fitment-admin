@@ -6,6 +6,7 @@ import { CraftsmanUser } from '../craftsman-user/craftsman-user.entity';
 import { CreateHomePageAuditDto } from './dto/create-home-page-audit.dto';
 import { UpdateHomePageAuditDto } from './dto/update-home-page-audit.dto';
 import { QueryHomePageAuditDto } from './dto/query-home-page-audit.dto';
+import { SystemNotificationService } from '../system-notification/system-notification.service';
 
 @Injectable()
 export class HomePageAuditService {
@@ -14,6 +15,7 @@ export class HomePageAuditService {
     private readonly homePageAuditRepository: Repository<HomePageAudit>,
     @InjectRepository(CraftsmanUser)
     private readonly craftsmanUserRepository: Repository<CraftsmanUser>,
+    private readonly notificationService: SystemNotificationService,
   ) {}
 
   /**
@@ -295,6 +297,15 @@ export class HomePageAuditService {
       // 更新用户的 isHomePageVerified 状态为 true
       await this.craftsmanUserRepository.update(userId, {
         isHomePageVerified: true,
+      });
+
+      // 创建系统通知
+      await this.notificationService.create({
+        userId,
+        notification_type: 'home-page-audit',
+        title: '个人主页审核通过',
+        content: '恭喜您，您的个人主页信息已通过审核！',
+        is_read: false,
       });
 
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }

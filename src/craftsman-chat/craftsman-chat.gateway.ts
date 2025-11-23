@@ -11,22 +11,24 @@ import { Socket, Server } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { Injectable, Logger } from '@nestjs/common';
 import { JWT_CONFIG } from '../common/constants/app.constants';
-import { WstService } from './wst.service';
+import { CraftsmanChatService } from './craftsman-chat.service';
 
 /**
- * WebSocket Gateway for Chat
- * 处理实时聊天功能
+ * WebSocket Gateway for Craftsman Chat
+ * 处理工匠用户与管理员之间的实时聊天功能
  */
 @WebSocketGateway({
   cors: {
     origin: true, // 允许所有来源
     credentials: true, // 允许携带凭证
   },
-  namespace: '/chat',
+  namespace: '/craftsman-chat',
 })
 @Injectable()
-export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  private readonly logger = new Logger(WstGateway.name);
+export class CraftsmanChatGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
+  private readonly logger = new Logger(CraftsmanChatGateway.name);
 
   @WebSocketServer()
   server: Server;
@@ -38,7 +40,7 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(
     private readonly jwtService: JwtService,
-    private readonly wstService: WstService,
+    private readonly craftsmanChatService: CraftsmanChatService,
   ) {}
 
   /**
@@ -67,25 +69,26 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
       let userType: string;
       let roomId: number | null = null;
 
-      // 兼容admin和微信两种token格式
-      if (payload.type === 'wechat') {
-        // 微信用户
-        userId = payload.userId;
-        userType = 'wechat';
-        // 微信用户加入自己的房间
-        const room = await this.wstService.getOrCreateRoomByWechatUser(userId);
+      // 兼容craftsman和admin两种token格式
+      if (payload.type === 'craftsman') {
+        // 工匠用户
+        userId = payload.userId || payload.userid;
+        userType = 'craftsman';
+        // 工匠用户加入自己的房间
+        const room =
+          await this.craftsmanChatService.getOrCreateRoomByCraftsmanUser(userId);
         if (room) {
           roomId = room.id;
           client.join(`room:${roomId}`);
-          this.logger.log(`微信用户 ${userId} 连接到房间 ${roomId}`);
+          this.logger.log(`工匠用户 ${userId} 连接到房间 ${roomId}`);
           
           // 检查房间是否有消息，如果没有消息，发送欢迎消息
-          const hasMessages = await this.wstService.hasMessages(roomId);
+          const hasMessages = await this.craftsmanChatService.hasMessages(roomId);
           if (!hasMessages) {
-            // 发送欢迎消息（以客服身份发送，senderId 使用 0 表示系统）
-            const welcomeMessage = await this.wstService.createMessage(
+            // 发送欢迎消息（以管理员身份发送，senderId 使用 0 表示系统）
+            const welcomeMessage = await this.craftsmanChatService.createMessage(
               roomId,
-              'service',
+              'admin',
               0,
               '欢迎使用叮当优+，请问有什么可以帮助您的吗？',
               'text',
@@ -113,10 +116,10 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
           }
         }
       } else {
-        // 客服用户
+        // 管理员用户
         userId = payload.userid;
-        userType = 'service';
-        this.logger.log(`客服用户 ${userId} 已连接`);
+        userType = 'admin';
+        this.logger.log(`管理员用户 ${userId} 已连接`);
       }
 
       // 保存连接信息
@@ -154,7 +157,7 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   /**
    * 订阅消息：加入房间
-   * 客服可以通过此方法加入特定的聊天房间
+   * 管理员可以通过此方法加入特定的聊天房间
    */
   @SubscribeMessage('join-room')
   async handleJoinRoom(
@@ -162,8 +165,8 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { roomId: number },
   ) {
     const userInfo = client.data;
-    if (!userInfo || userInfo.userType !== 'service') {
-      client.emit('error', { message: '只有客服可以加入房间' });
+    if (!userInfo || userInfo.userType !== 'admin') {
+      client.emit('error', { message: '只有管理员可以加入房间' });
       return;
     }
 
@@ -172,7 +175,7 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
     userInfo.roomId = roomId;
     this.socketUsers.set(client.id, userInfo);
 
-    this.logger.log(`客服 ${userInfo.userId} 加入房间 ${roomId}`);
+    this.logger.log(`管理员 ${userInfo.userId} 加入房间 ${roomId}`);
     client.emit('joined-room', { roomId });
   }
 
@@ -182,7 +185,8 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('send-message')
   async handleSendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomId: number; content: string; messageType?: string },
+    @MessageBody()
+    data: { roomId: number; content: string; messageType?: string },
   ) {
     const userInfo = client.data;
     if (!userInfo) {
@@ -194,7 +198,7 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const { roomId, content, messageType = 'text' } = data;
 
     // 验证用户是否在房间中
-    if (userType === 'wechat') {
+    if (userType === 'craftsman') {
       if (userInfo.roomId !== roomId) {
         client.emit('error', { message: '无权访问此房间' });
         return;
@@ -203,9 +207,9 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     try {
       // 保存消息到数据库
-      const message = await this.wstService.createMessage(
+      const message = await this.craftsmanChatService.createMessage(
         roomId,
-        userType === 'wechat' ? 'wechat' : 'service',
+        userType === 'craftsman' ? 'craftsman' : 'admin',
         userId,
         content,
         messageType,
@@ -246,15 +250,16 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { roomId: number },
   ) {
     const userInfo = client.data;
-    if (!userInfo || userInfo.userType !== 'service') {
+    if (!userInfo || userInfo.userType !== 'admin') {
       return;
     }
 
     try {
-      await this.wstService.markRoomAsRead(data.roomId);
+      await this.craftsmanChatService.markRoomAsRead(data.roomId);
       this.logger.log(`房间 ${data.roomId} 已标记为已读`);
     } catch (error) {
       this.logger.error('标记已读失败', error);
     }
   }
 }
+

@@ -16,3 +16,7 @@ export { SwiperConfigModule } from './swiper-config/swiper-config.module';
 export { IsVerifiedModule } from './is-verified/is-verified.module';
 export { IsSkillVerifiedModule } from './is-skill-verified/is-skill-verified.module';
 export { HomePageAuditModule } from './home-page-audit/home-page-audit.module';
+export { CraftsmanChatModule } from './craftsman-chat/craftsman-chat.module';
+export { CraftsmanWechatChatModule } from './craftsman-wechat-chat/craftsman-wechat-chat.module';
+export { PlatformNoticeModule } from './platform-notice/platform-notice.module';
+export { SystemNotificationModule } from './system-notification/system-notification.module';

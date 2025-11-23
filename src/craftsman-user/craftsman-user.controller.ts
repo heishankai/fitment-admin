@@ -100,6 +100,7 @@ export class CraftsmanUserController {
    * @param queryDto 查询参数 {pageIndex, pageSize, nickname, phone}
    * @returns 分页结果
    */
+  @Public() // 允许微信用户访问，用于选择工匠
   @Post('page')
   async getCraftsmanUsersByPage(
     @Body(ValidationPipe) queryDto: QueryCraftsmanUserDto,
@@ -128,4 +129,5 @@ export class CraftsmanUserController {
   ): Promise<null> {
     return await this.craftsmanUserService.deleteCraftsmanUser(id);
   }
+
 }

@@ -1,44 +1,46 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ChatRoom } from './entities/chat-room.entity';
-import { ChatMessage } from './entities/chat-message.entity';
-import { CreateChatRoomDto } from './dto/create-chat-room.dto';
+import { CraftsmanChatRoom } from './entities/craftsman-chat-room.entity';
+import { CraftsmanChatMessage } from './entities/craftsman-chat-message.entity';
+import { CreateCraftsmanChatRoomDto } from './dto/create-craftsman-chat-room.dto';
 
 /**
- * 聊天服务类
- * 提供聊天相关的业务逻辑处理
+ * 工匠聊天服务类
+ * 提供工匠聊天相关的业务逻辑处理
  */
 @Injectable()
-export class WstService {
+export class CraftsmanChatService {
   constructor(
-    @InjectRepository(ChatRoom)
-    private readonly chatRoomRepository: Repository<ChatRoom>,
-    @InjectRepository(ChatMessage)
-    private readonly chatMessageRepository: Repository<ChatMessage>,
+    @InjectRepository(CraftsmanChatRoom)
+    private readonly chatRoomRepository: Repository<CraftsmanChatRoom>,
+    @InjectRepository(CraftsmanChatMessage)
+    private readonly chatMessageRepository: Repository<CraftsmanChatMessage>,
   ) {}
 
   /**
-   * 根据微信用户ID获取或创建聊天房间
-   * @param wechatUserId 微信用户ID
+   * 根据工匠用户ID获取或创建聊天房间
+   * @param craftsmanUserId 工匠用户ID
    * @returns 聊天房间
    */
-  async getOrCreateRoomByWechatUser(wechatUserId: number): Promise<ChatRoom> {
+  async getOrCreateRoomByCraftsmanUser(
+    craftsmanUserId: number,
+  ): Promise<CraftsmanChatRoom> {
     let room = await this.chatRoomRepository.findOne({
-      where: { wechat_user_id: wechatUserId, active: true },
-      relations: ['wechat_user'],
+      where: { craftsman_user_id: craftsmanUserId, active: true },
+      relations: ['craftsman_user'],
     });
 
     if (!room) {
       const newRoom = this.chatRoomRepository.create({
-        wechat_user_id: wechatUserId,
+        craftsman_user_id: craftsmanUserId,
         active: true,
       });
       room = await this.chatRoomRepository.save(newRoom);
       // 重新加载以获取关联数据
       const reloadedRoom = await this.chatRoomRepository.findOne({
         where: { id: room.id },
-        relations: ['wechat_user'],
+        relations: ['craftsman_user'],
       });
       if (!reloadedRoom) {
         throw new HttpException(
@@ -57,10 +59,12 @@ export class WstService {
    * @param createChatRoomDto 创建聊天房间的DTO
    * @returns 聊天房间
    */
-  async createRoom(createChatRoomDto: CreateChatRoomDto): Promise<ChatRoom> {
+  async createRoom(
+    createChatRoomDto: CreateCraftsmanChatRoomDto,
+  ): Promise<CraftsmanChatRoom> {
     const existingRoom = await this.chatRoomRepository.findOne({
       where: {
-        wechat_user_id: createChatRoomDto.wechat_user_id,
+        craftsman_user_id: createChatRoomDto.craftsman_user_id,
         active: true,
       },
     });
@@ -70,7 +74,7 @@ export class WstService {
     }
 
     const room = this.chatRoomRepository.create({
-      wechat_user_id: createChatRoomDto.wechat_user_id,
+      craftsman_user_id: createChatRoomDto.craftsman_user_id,
       active: true,
     });
 
@@ -78,13 +82,13 @@ export class WstService {
   }
 
   /**
-   * 获取客服的所有聊天房间列表（带最后一条消息）
+   * 获取管理员的所有聊天房间列表（带最后一条消息）
    * @returns 聊天房间列表
    */
-  async getServiceRooms(): Promise<any[]> {
+  async getAdminRooms(): Promise<any[]> {
     const rooms = await this.chatRoomRepository.find({
       where: { active: true },
-      relations: ['wechat_user'],
+      relations: ['craftsman_user'],
       order: { updatedAt: 'DESC' },
     });
 
@@ -98,17 +102,18 @@ export class WstService {
 
         return {
           id: room.id,
-          wechat_user_id: room.wechat_user_id,
-          wechat_user: room.wechat_user
+          craftsman_user_id: room.craftsman_user_id,
+          craftsman_user: room.craftsman_user
             ? {
-                id: room.wechat_user.id,
-                openid: room.wechat_user.openid,
-                phone: room.wechat_user.phone,
-                nickname: room.wechat_user.nickname,
-                avatar: room.wechat_user.avatar,
-                city: room.wechat_user.city,
-                createdAt: room.wechat_user.createdAt,
-                updatedAt: room.wechat_user.updatedAt,
+                id: room.craftsman_user.id,
+                phone: room.craftsman_user.phone,
+                nickname: room.craftsman_user.nickname,
+                avatar: room.craftsman_user.avatar,
+                isVerified: room.craftsman_user.isVerified,
+                isSkillVerified: room.craftsman_user.isSkillVerified,
+                isHomePageVerified: room.craftsman_user.isHomePageVerified,
+                createdAt: room.craftsman_user.createdAt,
+                updatedAt: room.craftsman_user.updatedAt,
               }
             : null,
           lastMessage: lastMessage
@@ -123,7 +128,7 @@ export class WstService {
             where: {
               chat_room_id: room.id,
               read: false,
-              sender_type: 'wechat', // 只统计微信用户发送的未读消息
+              sender_type: 'craftsman', // 只统计工匠用户发送的未读消息
             },
           }),
           createdAt: room.createdAt,
@@ -136,21 +141,21 @@ export class WstService {
   }
 
   /**
-   * 获取微信用户的聊天房间（如果不存在则自动创建）
-   * @param wechatUserId 微信用户ID
+   * 获取工匠用户的聊天房间（如果不存在则自动创建）
+   * @param craftsmanUserId 工匠用户ID
    * @returns 聊天房间
    */
-  async getWechatUserRoom(wechatUserId: number): Promise<any> {
+  async getCraftsmanUserRoom(craftsmanUserId: number): Promise<any> {
     // 先尝试获取现有房间
     let room = await this.chatRoomRepository.findOne({
-      where: { wechat_user_id: wechatUserId, active: true },
-      relations: ['wechat_user'],
+      where: { craftsman_user_id: craftsmanUserId, active: true },
+      relations: ['craftsman_user'],
     });
 
     // 如果房间不存在，自动创建一个
     if (!room) {
       room = this.chatRoomRepository.create({
-        wechat_user_id: wechatUserId,
+        craftsman_user_id: craftsmanUserId,
         active: true,
       });
       room = await this.chatRoomRepository.save(room);
@@ -158,7 +163,7 @@ export class WstService {
       // 重新加载以获取关联数据
       room = await this.chatRoomRepository.findOne({
         where: { id: room.id },
-        relations: ['wechat_user'],
+        relations: ['craftsman_user'],
       });
     }
 
@@ -173,17 +178,18 @@ export class WstService {
 
     return {
       id: room.id,
-      wechat_user_id: room.wechat_user_id,
-      wechat_user: room.wechat_user
+      craftsman_user_id: room.craftsman_user_id,
+      craftsman_user: room.craftsman_user
         ? {
-            id: room.wechat_user.id,
-            openid: room.wechat_user.openid,
-            phone: room.wechat_user.phone,
-            nickname: room.wechat_user.nickname,
-            avatar: room.wechat_user.avatar,
-            city: room.wechat_user.city,
-            createdAt: room.wechat_user.createdAt,
-            updatedAt: room.wechat_user.updatedAt,
+            id: room.craftsman_user.id,
+            phone: room.craftsman_user.phone,
+            nickname: room.craftsman_user.nickname,
+            avatar: room.craftsman_user.avatar,
+            isVerified: room.craftsman_user.isVerified,
+            isSkillVerified: room.craftsman_user.isSkillVerified,
+            isHomePageVerified: room.craftsman_user.isHomePageVerified,
+            createdAt: room.craftsman_user.createdAt,
+            updatedAt: room.craftsman_user.updatedAt,
           }
         : null,
       lastMessage: lastMessage
@@ -206,7 +212,7 @@ export class WstService {
    */
   async getAllRoomMessages(
     roomId: number,
-  ): Promise<{ messages: ChatMessage[]; total: number }> {
+  ): Promise<{ messages: CraftsmanChatMessage[]; total: number }> {
     const room = await this.chatRoomRepository.findOne({
       where: { id: roomId, active: true },
     });
@@ -234,7 +240,7 @@ export class WstService {
     roomId: number,
     page: number = 1,
     pageSize: number = 50,
-  ): Promise<{ messages: ChatMessage[]; total: number }> {
+  ): Promise<{ messages: CraftsmanChatMessage[]; total: number }> {
     const room = await this.chatRoomRepository.findOne({
       where: { id: roomId, active: true },
     });
@@ -243,12 +249,13 @@ export class WstService {
       throw new HttpException('房间不存在', HttpStatus.NOT_FOUND);
     }
 
-    const [messages, total] = await this.chatMessageRepository.findAndCount({
-      where: { chat_room_id: roomId },
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    });
+    const [messages, total] =
+      await this.chatMessageRepository.findAndCount({
+        where: { chat_room_id: roomId },
+        order: { createdAt: 'DESC' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      });
 
     // 反转数组，使消息按时间正序排列
     messages.reverse();
@@ -271,7 +278,7 @@ export class WstService {
     senderId: number,
     content: string,
     messageType: string = 'text',
-  ): Promise<ChatMessage> {
+  ): Promise<CraftsmanChatMessage> {
     const room = await this.chatRoomRepository.findOne({
       where: { id: roomId, active: true },
     });
@@ -307,7 +314,7 @@ export class WstService {
     await this.chatMessageRepository.update(
       {
         chat_room_id: roomId,
-        sender_type: 'wechat', // 只标记微信用户发送的消息为已读
+        sender_type: 'craftsman', // 只标记工匠用户发送的消息为已读
         read: false,
       },
       { read: true },
@@ -336,9 +343,6 @@ export class WstService {
     if (result.affected === 0) {
       throw new HttpException('删除失败', HttpStatus.INTERNAL_SERVER_ERROR);
     }
-
-    // 也可以选择硬删除所有消息
-    // await this.chatMessageRepository.delete({ chat_room_id: roomId });
   }
 
   /**
@@ -346,10 +350,10 @@ export class WstService {
    * @param id 房间ID
    * @returns 聊天房间
    */
-  async findOne(id: number): Promise<ChatRoom> {
+  async findOne(id: number): Promise<CraftsmanChatRoom> {
     const room = await this.chatRoomRepository.findOne({
       where: { id, active: true },
-      relations: ['wechat_user'],
+      relations: ['craftsman_user'],
     });
 
     if (!room) {
@@ -371,3 +375,4 @@ export class WstService {
     return count > 0;
   }
 }
+

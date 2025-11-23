@@ -292,4 +292,5 @@ export class CraftsmanUserService {
       throw new BadRequestException('删除工匠用户失败: ' + error.message);
     }
   }
+
 }

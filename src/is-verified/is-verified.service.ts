@@ -6,6 +6,7 @@ import { CraftsmanUser } from '../craftsman-user/craftsman-user.entity';
 import { CreateIsVerifiedDto } from './dto/create-is-verified.dto';
 import { UpdateIsVerifiedDto } from './dto/update-is-verified.dto';
 import { QueryIsVerifiedDto } from './dto/query-is-verified.dto';
+import { SystemNotificationService } from '../system-notification/system-notification.service';
 
 @Injectable()
 export class IsVerifiedService {
@@ -14,6 +15,7 @@ export class IsVerifiedService {
     private readonly isVerifiedRepository: Repository<IsVerified>,
     @InjectRepository(CraftsmanUser)
     private readonly craftsmanUserRepository: Repository<CraftsmanUser>,
+    private readonly notificationService: SystemNotificationService,
   ) {}
 
   /**
@@ -282,6 +284,15 @@ export class IsVerifiedService {
       // 更新用户的 isVerified 状态为 true
       await this.craftsmanUserRepository.update(userId, {
         isVerified: true,
+      });
+
+      // 创建系统通知
+      await this.notificationService.create({
+        userId,
+        notification_type: 'is-verified',
+        title: '实名认证审核通过',
+        content: '恭喜您，您的实名认证已通过审核！',
+        is_read: false,
       });
 
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }

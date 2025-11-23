@@ -27,6 +27,10 @@ import {
   IsVerifiedModule,
   IsSkillVerifiedModule,
   HomePageAuditModule,
+  CraftsmanChatModule,
+  CraftsmanWechatChatModule,
+  PlatformNoticeModule,
+  SystemNotificationModule,
 } from './index';
 // 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
@@ -61,12 +65,16 @@ import { WstModule } from './wst/wst.module';
     WorkTypeModule, // 工种类型模块
     WorkKindModule, // 工种配置模块
     LabourCostModule, // 人工成本配置模块
-  CraftsmanUserModule, // 工匠用户模块
-  SwiperConfigModule,
-  WstModule, // 轮播图配置模块
+    CraftsmanUserModule, // 工匠用户模块
+    SwiperConfigModule,
+    WstModule, // 轮播图配置模块
   IsVerifiedModule, // 实名认证模块
   IsSkillVerifiedModule, // 技能认证模块
   HomePageAuditModule, // 首页审核模块
+  CraftsmanChatModule, // 工匠聊天模块
+  CraftsmanWechatChatModule, // 工匠-微信用户聊天模块
+  PlatformNoticeModule, // 平台公告模块
+  SystemNotificationModule, // 系统通知模块
   ],
   // 导入其他模块的数组
   controllers: [AppController], // 注册控制器，处理 HTTP 请求
