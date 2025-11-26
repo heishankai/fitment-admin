@@ -46,6 +46,10 @@ export class CreateCommodityConfigDto {
   commodity_price: any; // 商品价格（支持数字和字符串类型）
 
   @IsString()
+  @IsNotEmpty({ message: '商品单位不能为空' })
+  commodity_unit: string; // 商品单位
+
+  @IsString()
   @IsNotEmpty({ message: '商品描述不能为空' })
   @MaxLength(800, { message: '商品描述最多800字' })
   commodity_description: string; // 商品描述（最多800字）

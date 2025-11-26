@@ -61,6 +61,13 @@ export class UpdateCommodityConfigDto {
   commodity_price?: any;
 
   /**
+   * 商品单位
+   */
+  @IsOptional()
+  @IsString({ message: '商品单位必须是字符串' })
+  commodity_unit?: string;
+
+  /**
    * 商品描述
    */
   @IsOptional()

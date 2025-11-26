@@ -23,6 +23,9 @@ export class CommodityConfig {
   @Column({ type: 'varchar', length: 50 })
   commodity_price: any; // 商品价格（支持数字和字符串类型）
 
+  @Column()
+  commodity_unit: string; // 商品单位
+
   @Column({ length: 800 })
   commodity_description: string; // 商品描述（最多800字）
 
