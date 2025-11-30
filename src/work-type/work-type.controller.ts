@@ -49,6 +49,18 @@ export class WorkTypeController {
   }
 
   /**
+   * 根据工种ID查询所有工价数据
+   * @param workKindId 工种ID
+   * @returns 工价数据列表
+   */
+  @Get('work-kind/:workKindId')
+  async getWorkTypesByWorkKindId(
+    @Param('workKindId') workKindId: string,
+  ): Promise<WorkType[]> {
+    return await this.workTypeService.getWorkTypesByWorkKindId(workKindId);
+  }
+
+  /**
    * 根据ID获取工种类型
    * @param id 工种类型ID
    * @returns 工种类型记录

@@ -20,3 +20,5 @@ export { CraftsmanChatModule } from './craftsman-chat/craftsman-chat.module';
 export { CraftsmanWechatChatModule } from './craftsman-wechat-chat/craftsman-wechat-chat.module';
 export { PlatformNoticeModule } from './platform-notice/platform-notice.module';
 export { SystemNotificationModule } from './system-notification/system-notification.module';
+export { GeolocationModule } from './common/geolocation/geolocation.module';
+export { OrderModule } from './order/order.module';

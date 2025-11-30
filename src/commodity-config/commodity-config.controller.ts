@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   Request,
   ValidationPipe,
   ParseIntPipe,
@@ -24,11 +25,21 @@ export class CommodityConfigController {
 
   /**
    * 获取所有商品配置
-   * @returns 所有商品配置列表
+   * @param categoryId 可选的类目ID，用于筛选特定类目的商品
+   * @returns 商品配置列表
    */
   @Get()
-  async getAllCommodityConfigs(): Promise<CommodityConfig[]> {
-    return await this.commodityConfigService.getAllCommodityConfigs();
+  async getAllCommodityConfigs(
+    @Query('category_id') categoryId?: string,
+  ): Promise<CommodityConfig[]> {
+    let categoryIdNum: number | undefined = undefined;
+    if (categoryId) {
+      const parsed = parseInt(categoryId, 10);
+      if (!isNaN(parsed)) {
+        categoryIdNum = parsed;
+      }
+    }
+    return await this.commodityConfigService.getAllCommodityConfigs(categoryIdNum);
   }
 
   /**

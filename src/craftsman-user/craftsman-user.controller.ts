@@ -111,10 +111,12 @@ export class CraftsmanUserController {
   /**
    * 根据ID获取工匠用户
    * @param id 工匠用户ID
-   * @returns 工匠用户信息
+   * @returns 工匠用户信息（包含 isHomePageVerified 和技能信息）
    */
   @Get(':id')
-  async findOne(@Param('id', ParseIntPipe) id: number): Promise<CraftsmanUser> {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<CraftsmanUser & { isHomePageVerified: boolean; skillInfo: any }> {
     return await this.craftsmanUserService.findOne(id);
   }
 
@@ -129,5 +131,4 @@ export class CraftsmanUserController {
   ): Promise<null> {
     return await this.craftsmanUserService.deleteCraftsmanUser(id);
   }
-
 }

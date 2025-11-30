@@ -10,6 +10,7 @@ import {
   Request,
   HttpException,
   HttpStatus,
+  ValidationPipe,
 } from '@nestjs/common';
 import { CraftsmanWechatChatService } from './craftsman-wechat-chat.service';
 import { CreateCraftsmanWechatChatRoomDto } from './dto/create-craftsman-wechat-chat-room.dto';
@@ -91,21 +92,45 @@ export class CraftsmanWechatChatController {
   /**
    * 创建聊天房间
    * POST /craftsman-wechat-chat/rooms
-   * 微信用户创建房间时，wechat_user_id 从 token 中获取
+   * - 微信用户创建房间时，wechat_user_id 从 token 中获取，craftsman_user_id 从请求体获取
+   * - 工匠用户创建房间时，craftsman_user_id 从 token 中获取，wechat_user_id 从请求体获取
    */
   @Post('rooms')
   async createRoom(
-    @Body() createChatRoomDto: CreateCraftsmanWechatChatRoomDto,
+    @Body(ValidationPipe) createChatRoomDto: CreateCraftsmanWechatChatRoomDto,
     @Request() req: any,
   ) {
     const user = req.user;
-    // 如果用户是微信用户，从token中获取wechat_user_id
-    if (user && user.type === 'wechat') {
-      const wechatUserId = user.userid || user.userId;
-      if (wechatUserId) {
-        createChatRoomDto.wechat_user_id = wechatUserId;
-      }
+    if (!user) {
+      throw new HttpException('未授权', HttpStatus.UNAUTHORIZED);
     }
+
+    const userId = user.userid || user.userId;
+    
+    if (user.type === 'wechat') {
+      // 微信用户：从 token 获取 wechat_user_id，从请求体获取 craftsman_user_id
+      createChatRoomDto.wechat_user_id = userId;
+      
+      if (!createChatRoomDto.craftsman_user_id) {
+        throw new HttpException(
+          '工匠用户ID不能为空',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    } else if (user.type === 'craftsman') {
+      // 工匠用户：从 token 获取 craftsman_user_id，从请求体获取 wechat_user_id
+      createChatRoomDto.craftsman_user_id = userId;
+      
+      if (!createChatRoomDto.wechat_user_id) {
+        throw new HttpException(
+          '微信用户ID不能为空',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    } else {
+      throw new HttpException('无效的用户类型', HttpStatus.BAD_REQUEST);
+    }
+    
     return await this.craftsmanWechatChatService.createRoom(createChatRoomDto);
   }
 

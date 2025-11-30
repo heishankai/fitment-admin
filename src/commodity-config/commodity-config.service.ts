@@ -15,15 +15,24 @@ export class CommodityConfigService {
 
   /**
    * 获取所有商品配置
-   * @returns 所有商品配置列表
+   * @param categoryId 可选的类目ID，用于筛选特定类目的商品
+   * @returns 商品配置列表
    */
-  async getAllCommodityConfigs(): Promise<CommodityConfig[]> {
+  async getAllCommodityConfigs(categoryId?: number): Promise<CommodityConfig[]> {
     try {
-      const commodityConfigs = await this.commodityConfigRepository.find({
-        order: {
-          createdAt: 'DESC',
-        },
-      });
+      const queryBuilder = this.commodityConfigRepository.createQueryBuilder('commodity_config');
+
+      // 如果提供了 category_id，则添加筛选条件
+      if (categoryId !== undefined && categoryId !== null) {
+        queryBuilder.where('commodity_config.category_id = :categoryId', {
+          categoryId,
+        });
+      }
+
+      // 按创建时间倒序排列
+      queryBuilder.orderBy('commodity_config.createdAt', 'DESC');
+
+      const commodityConfigs = await queryBuilder.getMany();
       return commodityConfigs;
     } catch (error) {
       throw new BadRequestException('获取商品配置失败: ' + error.message);

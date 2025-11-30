@@ -31,6 +31,8 @@ import {
   CraftsmanWechatChatModule,
   PlatformNoticeModule,
   SystemNotificationModule,
+  GeolocationModule,
+  OrderModule,
 } from './index';
 // 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
@@ -56,6 +58,7 @@ import { WstModule } from './wst/wst.module';
     AuthModule, // 权限模块
     SmsModule, // 短信模块
     UploadModule, // 公共文件上传模块
+    GeolocationModule, // 地理位置模块
     WechatUserModule, // 微信用户模块
     WechatAddressModule, // 微信地址模块
     CaseQueryModule, // 案例查询模块
@@ -68,13 +71,14 @@ import { WstModule } from './wst/wst.module';
     CraftsmanUserModule, // 工匠用户模块
     SwiperConfigModule,
     WstModule, // 轮播图配置模块
-  IsVerifiedModule, // 实名认证模块
-  IsSkillVerifiedModule, // 技能认证模块
-  HomePageAuditModule, // 首页审核模块
-  CraftsmanChatModule, // 工匠聊天模块
-  CraftsmanWechatChatModule, // 工匠-微信用户聊天模块
-  PlatformNoticeModule, // 平台公告模块
-  SystemNotificationModule, // 系统通知模块
+    IsVerifiedModule, // 实名认证模块
+    IsSkillVerifiedModule, // 技能认证模块
+    HomePageAuditModule, // 首页审核模块
+    CraftsmanChatModule, // 工匠聊天模块
+    CraftsmanWechatChatModule, // 工匠-微信用户聊天模块
+    PlatformNoticeModule, // 平台公告模块
+    SystemNotificationModule, // 系统通知模块
+    OrderModule, // 订单模块
   ],
   // 导入其他模块的数组
   controllers: [AppController], // 注册控制器，处理 HTTP 请求

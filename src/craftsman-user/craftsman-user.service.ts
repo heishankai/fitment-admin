@@ -6,6 +6,8 @@ import { JwtService } from '@nestjs/jwt';
 import { JWT_CONFIG } from '../common/constants/app.constants';
 // entity
 import { CraftsmanUser } from './craftsman-user.entity';
+import { IsSkillVerified } from '../is-skill-verified/is-skill-verified.entity';
+import { Order, OrderStatus } from '../order/order.entity';
 import { LoginDto } from './dto/login.dto';
 import { UpdateCraftsmanUserDto } from './dto/update-craftsman-user.dto';
 import { QueryCraftsmanUserDto } from './dto/query-craftsman-user.dto';
@@ -16,6 +18,10 @@ export class CraftsmanUserService {
   constructor(
     @InjectRepository(CraftsmanUser)
     private readonly craftsmanUserRepository: Repository<CraftsmanUser>,
+    @InjectRepository(IsSkillVerified)
+    private readonly isSkillVerifiedRepository: Repository<IsSkillVerified>,
+    @InjectRepository(Order)
+    private readonly orderRepository: Repository<Order>,
     private readonly jwtService: JwtService,
     private readonly smsService: SmsService,
   ) {}
@@ -100,6 +106,15 @@ export class CraftsmanUserService {
     avatar: string;
     isVerified: boolean;
     isSkillVerified: boolean;
+    isHomePageVerified: boolean;
+    skillInfo: IsSkillVerified | null;
+    latitude: number | null;
+    longitude: number | null;
+    province: string | null;
+    city: string | null;
+    district: string | null;
+    score: number | null;
+    completedOrdersCount: number;
   }> {
     try {
       const user = await this.craftsmanUserRepository.findOne({
@@ -110,6 +125,19 @@ export class CraftsmanUserService {
         throw new HttpException('用户不存在', HttpStatus.NOT_FOUND);
       }
 
+      // 获取技能信息
+      const skillInfo = await this.isSkillVerifiedRepository.findOne({
+        where: { userId },
+      });
+
+      // 获取已完成订单数量
+      const completedOrdersCount = await this.orderRepository.count({
+        where: {
+          craftsman_user_id: userId,
+          order_status: OrderStatus.COMPLETED,
+        },
+      });
+
       return {
         phone: user.phone,
         nickname: user.nickname || '叮当优+师傅',
@@ -118,6 +146,15 @@ export class CraftsmanUserService {
           'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',
         isVerified: user.isVerified || false,
         isSkillVerified: user.isSkillVerified || false,
+        isHomePageVerified: user.isHomePageVerified || false,
+        skillInfo: skillInfo || null,
+        latitude: user.latitude || null,
+        longitude: user.longitude || null,
+        province: user.province || null,
+        city: user.city || null,
+        district: user.district || null,
+        score: user.score ?? 300, // 积分/评分，默认300分
+        completedOrdersCount: completedOrdersCount || 0, // 已完成订单数量，没有则返回0
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -158,6 +195,21 @@ export class CraftsmanUserService {
       }
       if (updateData.avatar !== undefined) {
         updateFields.avatar = updateData.avatar;
+      }
+      if (updateData.latitude !== undefined) {
+        updateFields.latitude = updateData.latitude;
+      }
+      if (updateData.longitude !== undefined) {
+        updateFields.longitude = updateData.longitude;
+      }
+      if (updateData.province !== undefined) {
+        updateFields.province = updateData.province;
+      }
+      if (updateData.city !== undefined) {
+        updateFields.city = updateData.city;
+      }
+      if (updateData.district !== undefined) {
+        updateFields.district = updateData.district;
       }
 
       // 3. 执行更新
@@ -221,10 +273,30 @@ export class CraftsmanUserService {
         .take(pageSize)
         .getMany();
 
+      // 获取所有用户的ID
+      const userIds = data.map((user) => user.id);
+
+      // 批量查询技能信息
+      const skillInfos = await this.isSkillVerifiedRepository.find({
+        where: userIds.map((id) => ({ userId: id })),
+      });
+
+      // 创建 userId -> skillInfo 的映射
+      const skillInfoMap = new Map(
+        skillInfos.map((skill) => [skill.userId, skill]),
+      );
+
+      // 为每个用户添加 isHomePageVerified 和技能信息
+      const dataWithSkillInfo = data.map((user) => ({
+        ...user,
+        isHomePageVerified: user.isHomePageVerified || false,
+        skillInfo: skillInfoMap.get(user.id) || null,
+      }));
+
       // 返回结果（包含分页信息的完整格式）
       return {
         success: true,
-        data,
+        data: dataWithSkillInfo,
         code: 200,
         message: null,
         pageIndex,
@@ -250,9 +322,9 @@ export class CraftsmanUserService {
   /**
    * 根据ID获取工匠用户
    * @param id 工匠用户ID
-   * @returns 工匠用户信息
+   * @returns 工匠用户信息（包含 isHomePageVerified 和技能信息）
    */
-  async findOne(id: number): Promise<CraftsmanUser> {
+  async findOne(id: number): Promise<CraftsmanUser & { isHomePageVerified: boolean; skillInfo: IsSkillVerified | null }> {
     const user = await this.craftsmanUserRepository.findOne({
       where: { id },
     });
@@ -261,7 +333,16 @@ export class CraftsmanUserService {
       throw new BadRequestException('工匠用户不存在');
     }
 
-    return user;
+    // 获取技能信息
+    const skillInfo = await this.isSkillVerifiedRepository.findOne({
+      where: { userId: id },
+    });
+
+    return {
+      ...user,
+      isHomePageVerified: user.isHomePageVerified || false,
+      skillInfo: skillInfo || null,
+    };
   }
 
   /**

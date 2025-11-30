@@ -173,4 +173,39 @@ export class WorkTypeService {
       throw new BadRequestException('删除工种类型失败: ' + error.message);
     }
   }
+
+  /**
+   * 根据工种ID查询所有工价数据
+   * @param workKindId 工种ID（字符串或数字）
+   * @returns 工价数据列表
+   */
+  async getWorkTypesByWorkKindId(
+    workKindId: string | number,
+  ): Promise<WorkType[]> {
+    try {
+      // 将 workKindId 转换为字符串和数字两种格式，因为 JSON 中可能存储为字符串或数字
+      const workKindIdStr = String(workKindId);
+      const workKindIdNum = Number(workKindId);
+
+      // 使用 JSON_EXTRACT 查询 JSON 字段
+      // 查询 work_kind.value 等于 workKindId 的记录
+      const workTypes = await this.workTypeRepository
+        .createQueryBuilder('work_type')
+        .where(
+          '(JSON_EXTRACT(work_type.work_kind, "$.value") = :workKindIdStr OR JSON_EXTRACT(work_type.work_kind, "$.value") = :workKindIdNum)',
+          {
+            workKindIdStr,
+            workKindIdNum,
+          },
+        )
+        .orderBy('work_type.createdAt', 'DESC')
+        .getMany();
+
+      return workTypes;
+    } catch (error) {
+      throw new BadRequestException(
+        '根据工种ID查询工价数据失败: ' + error.message,
+      );
+    }
+  }
 }
