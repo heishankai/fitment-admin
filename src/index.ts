@@ -22,3 +22,8 @@ export { PlatformNoticeModule } from './platform-notice/platform-notice.module';
 export { SystemNotificationModule } from './system-notification/system-notification.module';
 export { GeolocationModule } from './common/geolocation/geolocation.module';
 export { OrderModule } from './order/order.module';
+export { WalletModule } from './wallet/wallet.module';
+export { CraftsmanBankCardModule } from './craftsman-bank-card/craftsman-bank-card.module';
+export { WithdrawModule } from './withdraw/withdraw.module';
+export { WalletTransactionModule } from './wallet-transaction/wallet-transaction.module';
+export { HomeModule } from './home/home.module';

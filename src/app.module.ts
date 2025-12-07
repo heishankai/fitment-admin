@@ -33,6 +33,11 @@ import {
   SystemNotificationModule,
   GeolocationModule,
   OrderModule,
+  WalletModule,
+  CraftsmanBankCardModule,
+  WithdrawModule,
+  WalletTransactionModule,
+  HomeModule,
 } from './index';
 // 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
@@ -79,6 +84,11 @@ import { WstModule } from './wst/wst.module';
     PlatformNoticeModule, // 平台公告模块
     SystemNotificationModule, // 系统通知模块
     OrderModule, // 订单模块
+    WalletModule, // 钱包模块
+    CraftsmanBankCardModule, // 工匠银行卡模块
+    WithdrawModule, // 提现申请审核模块
+    WalletTransactionModule, // 账户明细模块
+    HomeModule, // 首页统计模块
   ],
   // 导入其他模块的数组
   controllers: [AppController], // 注册控制器，处理 HTTP 请求

@@ -22,6 +22,12 @@ import { QueryCraftsmanOrdersDto } from './dto/query-craftsman-orders.dto';
 import { AddConstructionProgressDto } from './dto/add-construction-progress.dto';
 import { AddMaterialsDto } from './dto/add-materials.dto';
 import { AddWorkPricesDto } from './dto/add-work-prices.dto';
+import { QueryOrderDto } from './dto/query-order.dto';
+import { AssignOrderDto } from './dto/assign-order.dto';
+import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
+import { AcceptWorkPriceDto } from './dto/accept-work-price.dto';
+import { AcceptMaterialsDto } from './dto/accept-materials.dto';
+import { CancelOrderDto } from './dto/cancel-order.dto';
 
 @Controller('order')
 export class OrderController {
@@ -238,6 +244,30 @@ export class OrderController {
   }
 
   /**
+   * 指派订单给工匠（管理员操作）
+   * @param body 指派信息（订单ID和工匠用户ID）
+   * @returns 更新后的订单
+   */
+  @Post('assign')
+  async assignOrder(@Body(ValidationPipe) body: AssignOrderDto) {
+    try {
+      return await this.orderService.assignOrder(
+        body.orderId,
+        body.craftsmanUserId,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('指派订单失败:', error);
+      throw new HttpException(
+        '指派订单失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
    * 更新订单状态（HTTP接口）
    * @param id 订单ID
    * @param body 订单状态更新信息
@@ -351,6 +381,111 @@ export class OrderController {
         throw error;
       }
       throw new HttpException('添加工价失败', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * 分页查询订单
+   * @param body 查询参数
+   * @returns 分页结果
+   */
+  @Post('query')
+  async getOrdersByPage(@Body(ValidationPipe) body: QueryOrderDto) {
+    try {
+      return await this.orderService.getOrdersByPage(body);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('分页查询订单失败:', error);
+      throw new HttpException(
+        '分页查询订单失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 确认支付
+   * @param body 确认支付信息
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  @Post('confirm-payment')
+  async confirmPayment(@Body(ValidationPipe) body: ConfirmPaymentDto): Promise<null> {
+    try {
+      return await this.orderService.confirmPayment(body);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('确认支付失败:', error);
+      throw new HttpException(
+        '确认支付失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 验收工价
+   * @param body 验收信息
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  @Post('accept-work-price')
+  async acceptWorkPrice(@Body(ValidationPipe) body: AcceptWorkPriceDto): Promise<null> {
+    try {
+      return await this.orderService.acceptWorkPrice(body);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('验收工价失败:', error);
+      throw new HttpException(
+        '验收工价失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 验收辅材
+   * @param body 验收信息
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  @Post('accept-materials')
+  async acceptMaterials(@Body(ValidationPipe) body: AcceptMaterialsDto): Promise<null> {
+    try {
+      return await this.orderService.acceptMaterials(body);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('验收辅材失败:', error);
+      throw new HttpException(
+        '验收辅材失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 取消订单
+   * @param body 取消订单信息
+   * @returns 更新后的订单
+   */
+  @Post('cancel')
+  async cancelOrder(@Body(ValidationPipe) body: CancelOrderDto) {
+    try {
+      return await this.orderService.cancelOrder(body);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('取消订单失败:', error);
+      throw new HttpException(
+        '取消订单失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 

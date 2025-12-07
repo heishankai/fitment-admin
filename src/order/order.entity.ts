@@ -104,6 +104,8 @@ export class Order {
   })
   materials_list: Array<{
     total_price: number; // 总价
+    is_paid: boolean; // 用户是否已付款
+    total_is_accepted: boolean; // 总验收状态
     commodity_list: Array<{
       id: number; // 商品ID
       commodity_name: string; // 商品名称
@@ -120,9 +122,66 @@ export class Order {
     nullable: true,
   })
   work_prices: Array<{
-    total_price: number; // 总价
-    prices_list: any[]; // 价格列表（可存储任意数据）
+    visiting_service_num: number; // 上门服务数量
+    total_is_accepted: boolean; // 总验收状态
+    total_price: number; // 施工费用（不包含工长费用）
+    area: number | string; // 平米数
+    total_service_fee: number; // 平台服务费
+    craftsman_user_work_kind_name: string; // 当前用户的工种名称
+    is_paid: boolean; // 用户是否已付款
+    gangmaster_cost?: number; // 工长费用（仅当 craftsman_user_work_kind_name 为"工长"时存在）
+    prices_list: Array<{
+      id: number; // 工价id
+      quantity: number; // 数量
+      work_kind: {
+        id: number; // 工种id
+        work_kind_name: string; // 工种名称
+      };
+      work_price: string; // 工价
+      work_title: string; // 工价标题
+      labour_cost: {
+        id: number; // 单位id
+        labour_cost_name: string; // 单位名称
+      };
+      work_kind_id: number; // 工种id
+      minimum_price: string; // 最低价格
+      is_set_minimum_price: string; // 是否设置最低价格
+      is_accepted?: boolean; // 验收状态（仅当work_kind_name为"水电"或"泥瓦工"时存在）
+    }>; // 价格列表
   }>; // 工价列表数组
+
+  // 子工价列表（当 work_prices 已存在时，后续添加的工价单）
+  @Column({
+    type: 'json',
+    nullable: true,
+  })
+  sub_work_prices: Array<{
+    visiting_service_num: number; // 上门服务费数量（子工价单为0）
+    total_is_accepted: boolean; // 总验收状态
+    total_price: number; // 施工费用（不包含工长费用）
+    area: number | string; // 平米数
+    total_service_fee: number; // 平台服务费
+    craftsman_user_work_kind_name: string; // 当前用户的工种名称
+    is_paid: boolean; // 用户是否已付款
+    prices_list: Array<{
+      id: number; // 工价id
+      quantity: number; // 数量
+      work_kind: {
+        id: number; // 工种id
+        work_kind_name: string; // 工种名称
+      };
+      work_price: string; // 工价
+      work_title: string; // 工价标题
+      labour_cost: {
+        id: number; // 单位id
+        labour_cost_name: string; // 单位名称
+      };
+      work_kind_id: number; // 工种id
+      minimum_price: string; // 最低价格
+      is_set_minimum_price: string; // 是否设置最低价格
+      // 子工价单不包含验收字段
+    }>; // 价格列表
+  }>; // 子工价列表数组
 
   // 关联用户
   @Column()
@@ -145,4 +204,3 @@ export class Order {
   @UpdateDateColumn()
   updatedAt: Date;
 }
-

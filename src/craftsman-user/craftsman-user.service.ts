@@ -229,6 +229,47 @@ export class CraftsmanUserService {
   }
 
   /**
+   * 获取所有工匠用户
+   * @returns 所有工匠用户列表（包含技能信息）
+   */
+  async getAllCraftsmanUsers(): Promise<Array<CraftsmanUser & { isHomePageVerified: boolean; skillInfo: IsSkillVerified | null }>> {
+    try {
+      // 查询所有工匠用户
+      const users = await this.craftsmanUserRepository.find({
+        order: { createdAt: 'DESC' },
+      });
+
+      // 获取所有用户的ID
+      const userIds = users.map((user) => user.id);
+
+      // 批量查询技能信息
+      const skillInfos = await this.isSkillVerifiedRepository.find({
+        where: userIds.map((id) => ({ userId: id })),
+      });
+
+      // 创建 userId -> skillInfo 的映射
+      const skillInfoMap = new Map(
+        skillInfos.map((skill) => [skill.userId, skill]),
+      );
+
+      // 为每个用户添加 isHomePageVerified 和技能信息
+      const dataWithSkillInfo = users.map((user) => ({
+        ...user,
+        isHomePageVerified: user.isHomePageVerified || false,
+        skillInfo: skillInfoMap.get(user.id) || null,
+      }));
+
+      return dataWithSkillInfo;
+    } catch (error) {
+      console.error('获取所有工匠用户错误:', error);
+      throw new HttpException(
+        '获取所有工匠用户失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
    * 分页查询工匠用户
    * @param queryDto 查询参数 {pageIndex, pageSize, nickname, phone}
    * @returns 分页结果

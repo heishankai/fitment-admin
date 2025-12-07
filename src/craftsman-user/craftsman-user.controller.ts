@@ -96,6 +96,15 @@ export class CraftsmanUserController {
   }
 
   /**
+   * 获取所有工匠用户
+   * @returns 所有工匠用户列表
+   */
+  @Get('all')
+  async getAllCraftsmanUsers(): Promise<any> {
+    return await this.craftsmanUserService.getAllCraftsmanUsers();
+  }
+
+  /**
    * 分页查询工匠用户
    * @param queryDto 查询参数 {pageIndex, pageSize, nickname, phone}
    * @returns 分页结果

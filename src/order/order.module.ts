@@ -9,6 +9,8 @@ import { OrderService } from './order.service';
 import { OrderGateway } from './order.gateway';
 import { OrderController } from './order.controller';
 import { JWT_CONFIG } from '../common/constants/app.constants';
+import { WalletModule } from '../wallet/wallet.module';
+import { WalletTransactionModule } from '../wallet-transaction/wallet-transaction.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { JWT_CONFIG } from '../common/constants/app.constants';
       secret: JWT_CONFIG.secret,
       signOptions: { expiresIn: JWT_CONFIG.expiresIn },
     }),
+    WalletModule,
+    WalletTransactionModule,
   ],
   controllers: [OrderController],
   providers: [OrderService, OrderGateway],
