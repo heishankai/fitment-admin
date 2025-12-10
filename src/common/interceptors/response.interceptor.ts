@@ -20,8 +20,26 @@ export class ResponseInterceptor<T>
     context: ExecutionContext,
     next: CallHandler,
   ): Observable<ApiResponseDto<T>> {
+    const response = context.switchToHttp().getResponse();
+    
     return next.handle().pipe(
       map((data) => {
+        // 如果响应已经发送（例如文件下载），直接返回数据，不进行包装
+        if (response.headersSent) {
+          return data;
+        }
+
+        // 如果响应类型是 blob（文件下载），直接返回数据
+        const contentType = response.getHeader('Content-Type');
+        if (
+          contentType &&
+          (contentType.toString().includes('application/vnd.openxmlformats') ||
+            contentType.toString().includes('application/octet-stream') ||
+            contentType.toString().includes('application/pdf'))
+        ) {
+          return data;
+        }
+
         // 如果已经是 ApiResponseDto 格式，直接返回
         if (data instanceof ApiResponseDto) {
           return data;

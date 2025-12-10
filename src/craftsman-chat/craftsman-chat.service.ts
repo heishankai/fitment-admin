@@ -83,61 +83,109 @@ export class CraftsmanChatService {
 
   /**
    * 获取管理员的所有聊天房间列表（带最后一条消息）
-   * @returns 聊天房间列表
+   * @param phone 工匠用户手机号（可选，用于搜索）
+   * @param pageIndex 页码，默认1
+   * @param pageSize 每页数量，默认10
+   * @returns 聊天房间列表和分页信息
    */
-  async getAdminRooms(): Promise<any[]> {
-    const rooms = await this.chatRoomRepository.find({
-      where: { active: true },
-      relations: ['craftsman_user'],
-      order: { updatedAt: 'DESC' },
-    });
+  async getAdminRooms(
+    phone?: string,
+    pageIndex: number = 1,
+    pageSize: number = 10,
+  ): Promise<any> {
+    try {
+      // 构建查询条件
+      const queryBuilder = this.chatRoomRepository
+        .createQueryBuilder('room')
+        .leftJoinAndSelect('room.craftsman_user', 'craftsman_user')
+        .where('room.active = :active', { active: true });
 
-    // 获取每个房间的最后一条消息
-    const roomsWithLastMessage = await Promise.all(
-      rooms.map(async (room) => {
-        const lastMessage = await this.chatMessageRepository.findOne({
-          where: { chat_room_id: room.id },
-          order: { createdAt: 'DESC' },
+      // 如果提供了手机号，添加搜索条件
+      if (phone) {
+        queryBuilder.andWhere('craftsman_user.phone LIKE :phone', {
+          phone: `%${phone}%`,
         });
+      }
 
-        return {
-          id: room.id,
-          craftsman_user_id: room.craftsman_user_id,
-          craftsman_user: room.craftsman_user
-            ? {
-                id: room.craftsman_user.id,
-                phone: room.craftsman_user.phone,
-                nickname: room.craftsman_user.nickname,
-                avatar: room.craftsman_user.avatar,
-                isVerified: room.craftsman_user.isVerified,
-                isSkillVerified: room.craftsman_user.isSkillVerified,
-                isHomePageVerified: room.craftsman_user.isHomePageVerified,
-                createdAt: room.craftsman_user.createdAt,
-                updatedAt: room.craftsman_user.updatedAt,
-              }
-            : null,
-          lastMessage: lastMessage
-            ? {
-                id: lastMessage.id,
-                content: lastMessage.content,
-                sender_type: lastMessage.sender_type,
-                createdAt: lastMessage.createdAt,
-              }
-            : null,
-          unreadCount: await this.chatMessageRepository.count({
-            where: {
-              chat_room_id: room.id,
-              read: false,
-              sender_type: 'craftsman', // 只统计工匠用户发送的未读消息
-            },
-          }),
-          createdAt: room.createdAt,
-          updatedAt: room.updatedAt,
-        };
-      }),
-    );
+      // 获取总数
+      const total = await queryBuilder.getCount();
 
-    return roomsWithLastMessage;
+      // 添加分页和排序
+      const rooms = await queryBuilder
+        .orderBy('room.updatedAt', 'DESC')
+        .skip((pageIndex - 1) * pageSize)
+        .take(pageSize)
+        .getMany();
+
+      // 获取每个房间的最后一条消息
+      const roomsWithLastMessage = await Promise.all(
+        rooms.map(async (room) => {
+          const lastMessage = await this.chatMessageRepository.findOne({
+            where: { chat_room_id: room.id },
+            order: { createdAt: 'DESC' },
+          });
+
+          return {
+            id: room.id,
+            craftsman_user_id: room.craftsman_user_id,
+            craftsman_user: room.craftsman_user
+              ? {
+                  id: room.craftsman_user.id,
+                  phone: room.craftsman_user.phone,
+                  nickname: room.craftsman_user.nickname,
+                  avatar: room.craftsman_user.avatar,
+                  isVerified: room.craftsman_user.isVerified,
+                  isSkillVerified: room.craftsman_user.isSkillVerified,
+                  isHomePageVerified: room.craftsman_user.isHomePageVerified,
+                  createdAt: room.craftsman_user.createdAt,
+                  updatedAt: room.craftsman_user.updatedAt,
+                }
+              : null,
+            lastMessage: lastMessage
+              ? {
+                  id: lastMessage.id,
+                  content: lastMessage.content,
+                  sender_type: lastMessage.sender_type,
+                  createdAt: lastMessage.createdAt,
+                }
+              : null,
+            unreadCount: await this.chatMessageRepository.count({
+              where: {
+                chat_room_id: room.id,
+                read: false,
+                sender_type: 'craftsman', // 只统计工匠用户发送的未读消息
+              },
+            }),
+            createdAt: room.createdAt,
+            updatedAt: room.updatedAt,
+          };
+        }),
+      );
+
+      // 返回结果（包含分页信息的完整格式）
+      return {
+        success: true,
+        data: roomsWithLastMessage,
+        code: 200,
+        message: null,
+        pageIndex,
+        pageSize,
+        total,
+        pageTotal: Math.ceil(total / pageSize),
+      };
+    } catch (error) {
+      console.error('分页查询聊天房间错误:', error);
+      return {
+        success: false,
+        data: null,
+        code: 500,
+        message: '分页查询失败: ' + error.message,
+        pageIndex: 1,
+        pageSize: 10,
+        total: 0,
+        pageTotal: 0,
+      };
+    }
   }
 
   /**

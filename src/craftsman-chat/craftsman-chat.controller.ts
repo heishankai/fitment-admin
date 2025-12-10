@@ -24,16 +24,28 @@ export class CraftsmanChatController {
   /**
    * 获取管理员的聊天房间列表（带最后一条消息和用户头像）
    * GET /craftsman-chat/rooms
+   * @param phone 工匠用户手机号（可选，用于搜索）
+   * @param pageIndex 页码，默认1
+   * @param pageSize 每页数量，默认10
    */
   @Get('rooms')
-  async getAdminRooms(@Request() req: any) {
+  async getAdminRooms(
+    @Request() req: any,
+    @Query('phone') phone?: string,
+    @Query('pageIndex') pageIndex: string = '1',
+    @Query('pageSize') pageSize: string = '10',
+  ) {
     // 只允许管理员访问
     const user = req.user;
     if (user.type === 'craftsman') {
       throw new HttpException('无权限访问', HttpStatus.FORBIDDEN);
     }
 
-    return await this.craftsmanChatService.getAdminRooms();
+    return await this.craftsmanChatService.getAdminRooms(
+      phone,
+      Number(pageIndex),
+      Number(pageSize),
+    );
   }
 
   /**

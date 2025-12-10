@@ -24,16 +24,28 @@ export class WstController {
   /**
    * 获取客服的聊天房间列表（带最后一条消息和用户头像）
    * GET /chat/rooms
+   * @param phone 微信用户手机号（可选，用于搜索）
+   * @param pageIndex 页码，默认1
+   * @param pageSize 每页数量，默认10
    */
   @Get('rooms')
-  async getServiceRooms(@Request() req: any) {
+  async getServiceRooms(
+    @Request() req: any,
+    @Query('phone') phone?: string,
+    @Query('pageIndex') pageIndex: string = '1',
+    @Query('pageSize') pageSize: string = '10',
+  ) {
     // 只允许客服访问
     const user = req.user;
     if (user.type === 'wechat') {
       throw new HttpException('无权限访问', HttpStatus.FORBIDDEN);
     }
 
-    return await this.wstService.getServiceRooms();
+    return await this.wstService.getServiceRooms(
+      phone,
+      Number(pageIndex),
+      Number(pageSize),
+    );
   }
 
   /**

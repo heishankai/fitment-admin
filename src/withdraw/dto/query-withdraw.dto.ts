@@ -3,6 +3,9 @@ import {
   IsNumber,
   Min,
   IsString,
+  IsArray,
+  ArrayMinSize,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -27,7 +30,21 @@ export class QueryWithdrawDto {
   craftsman_user_name?: string; // 工匠用户名（可选）
 
   @IsOptional()
+  @IsString()
+  phone?: string; // 工匠手机号（可选）
+
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   status?: number; // 状态筛选（可选）
+
+  /**
+   * 申请时间范围：YYYY-MM-DD 格式数组，例如 ["2025-12-12", "2026-01-07"]（用于查询申请日期）
+   */
+  @IsOptional()
+  @IsArray({ message: '申请时间范围必须是数组' })
+  @ArrayMinSize(2, { message: '申请时间范围数组必须包含2个元素' })
+  @ArrayMaxSize(2, { message: '申请时间范围数组必须包含2个元素' })
+  @IsString({ each: true, message: '申请时间范围数组中的每个元素必须是字符串格式 YYYY-MM-DD' })
+  apply_time?: string[];
 }

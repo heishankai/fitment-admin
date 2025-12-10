@@ -33,6 +33,9 @@ async function bootstrap() {
       'Access-Control-Request-Method',
       'Access-Control-Request-Headers',
     ],
+    exposedHeaders: [
+      'Content-Disposition', // 暴露 Content-Disposition 响应头，用于文件下载时获取文件名
+    ],
     credentials: true, // 允许携带凭证
     preflightContinue: false,
     optionsSuccessStatus: 204,

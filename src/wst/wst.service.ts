@@ -79,60 +79,108 @@ export class WstService {
 
   /**
    * 获取客服的所有聊天房间列表（带最后一条消息）
-   * @returns 聊天房间列表
+   * @param phone 微信用户手机号（可选，用于搜索）
+   * @param pageIndex 页码，默认1
+   * @param pageSize 每页数量，默认10
+   * @returns 聊天房间列表和分页信息
    */
-  async getServiceRooms(): Promise<any[]> {
-    const rooms = await this.chatRoomRepository.find({
-      where: { active: true },
-      relations: ['wechat_user'],
-      order: { updatedAt: 'DESC' },
-    });
+  async getServiceRooms(
+    phone?: string,
+    pageIndex: number = 1,
+    pageSize: number = 10,
+  ): Promise<any> {
+    try {
+      // 构建查询条件
+      const queryBuilder = this.chatRoomRepository
+        .createQueryBuilder('room')
+        .leftJoinAndSelect('room.wechat_user', 'wechat_user')
+        .where('room.active = :active', { active: true });
 
-    // 获取每个房间的最后一条消息
-    const roomsWithLastMessage = await Promise.all(
-      rooms.map(async (room) => {
-        const lastMessage = await this.chatMessageRepository.findOne({
-          where: { chat_room_id: room.id },
-          order: { createdAt: 'DESC' },
+      // 如果提供了手机号，添加搜索条件
+      if (phone) {
+        queryBuilder.andWhere('wechat_user.phone LIKE :phone', {
+          phone: `%${phone}%`,
         });
+      }
 
-        return {
-          id: room.id,
-          wechat_user_id: room.wechat_user_id,
-          wechat_user: room.wechat_user
-            ? {
-                id: room.wechat_user.id,
-                openid: room.wechat_user.openid,
-                phone: room.wechat_user.phone,
-                nickname: room.wechat_user.nickname,
-                avatar: room.wechat_user.avatar,
-                city: room.wechat_user.city,
-                createdAt: room.wechat_user.createdAt,
-                updatedAt: room.wechat_user.updatedAt,
-              }
-            : null,
-          lastMessage: lastMessage
-            ? {
-                id: lastMessage.id,
-                content: lastMessage.content,
-                sender_type: lastMessage.sender_type,
-                createdAt: lastMessage.createdAt,
-              }
-            : null,
-          unreadCount: await this.chatMessageRepository.count({
-            where: {
-              chat_room_id: room.id,
-              read: false,
-              sender_type: 'wechat', // 只统计微信用户发送的未读消息
-            },
-          }),
-          createdAt: room.createdAt,
-          updatedAt: room.updatedAt,
-        };
-      }),
-    );
+      // 获取总数
+      const total = await queryBuilder.getCount();
 
-    return roomsWithLastMessage;
+      // 添加分页和排序
+      const rooms = await queryBuilder
+        .orderBy('room.updatedAt', 'DESC')
+        .skip((pageIndex - 1) * pageSize)
+        .take(pageSize)
+        .getMany();
+
+      // 获取每个房间的最后一条消息
+      const roomsWithLastMessage = await Promise.all(
+        rooms.map(async (room) => {
+          const lastMessage = await this.chatMessageRepository.findOne({
+            where: { chat_room_id: room.id },
+            order: { createdAt: 'DESC' },
+          });
+
+          return {
+            id: room.id,
+            wechat_user_id: room.wechat_user_id,
+            wechat_user: room.wechat_user
+              ? {
+                  id: room.wechat_user.id,
+                  openid: room.wechat_user.openid,
+                  phone: room.wechat_user.phone,
+                  nickname: room.wechat_user.nickname,
+                  avatar: room.wechat_user.avatar,
+                  city: room.wechat_user.city,
+                  createdAt: room.wechat_user.createdAt,
+                  updatedAt: room.wechat_user.updatedAt,
+                }
+              : null,
+            lastMessage: lastMessage
+              ? {
+                  id: lastMessage.id,
+                  content: lastMessage.content,
+                  sender_type: lastMessage.sender_type,
+                  createdAt: lastMessage.createdAt,
+                }
+              : null,
+            unreadCount: await this.chatMessageRepository.count({
+              where: {
+                chat_room_id: room.id,
+                read: false,
+                sender_type: 'wechat', // 只统计微信用户发送的未读消息
+              },
+            }),
+            createdAt: room.createdAt,
+            updatedAt: room.updatedAt,
+          };
+        }),
+      );
+
+      // 返回结果（包含分页信息的完整格式）
+      return {
+        success: true,
+        data: roomsWithLastMessage,
+        code: 200,
+        message: null,
+        pageIndex,
+        pageSize,
+        total,
+        pageTotal: Math.ceil(total / pageSize),
+      };
+    } catch (error) {
+      console.error('分页查询聊天房间错误:', error);
+      return {
+        success: false,
+        data: null,
+        code: 500,
+        message: '分页查询失败: ' + error.message,
+        pageIndex: 1,
+        pageSize: 10,
+        total: 0,
+        pageTotal: 0,
+      };
+    }
   }
 
   /**
