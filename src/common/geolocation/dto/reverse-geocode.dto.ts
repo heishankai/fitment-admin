@@ -2,6 +2,7 @@ import { IsNumber, IsNotEmpty, Min, Max, IsOptional, IsIn } from 'class-validato
 
 /**
  * 逆地理编码DTO
+ * 兼容微信小程序：微信小程序返回的经纬度是GCJ02坐标系，默认值已设置为2（GCJ02），可直接使用
  */
 export class ReverseGeocodeDto {
   @IsNumber({}, { message: '经度必须是数字' })
@@ -18,7 +19,7 @@ export class ReverseGeocodeDto {
 
   @IsOptional()
   @IsNumber({}, { message: '坐标类型必须是数字' })
-  @IsIn([1, 2, 5], { message: '坐标类型：1=GPS(WGS84), 2=腾讯地图(GCJ02), 5=百度(BD09)' })
-  coordType?: number; // 坐标类型：1=GPS坐标, 2=腾讯地图坐标(GCJ02), 5=百度坐标(BD09)。默认为2（微信小程序返回的是GCJ02）
+  @IsIn([1, 2, 5], { message: '坐标类型：1=GPS(WGS84), 2=GCJ02(微信小程序/腾讯地图), 5=百度(BD09)' })
+  coordType?: number; // 坐标类型：1=GPS(WGS84), 2=GCJ02(微信小程序标准，默认值), 5=百度(BD09)
 }
 

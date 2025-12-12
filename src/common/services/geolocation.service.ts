@@ -1,6 +1,7 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import axios from 'axios';
-import { TENCENT_MAP_CONFIG } from '../constants/app.constants';
+import { TENCENT_MAP_CONFIG, AMAP_CONFIG } from '../constants/app.constants';
+import * as crypto from 'crypto';
 
 /**
  * POI（兴趣点）信息接口
@@ -179,6 +180,171 @@ export class GeolocationService {
   }
 
   /**
+   * 使用高德地图根据经纬度获取地址信息（逆地理编码）
+   * @param longitude 经度
+   * @param latitude 纬度
+   * @param coordType 坐标类型：gps=GPS(WGS84), autonavi=高德地图(GCJ02), baidu=百度(BD09)。默认为autonavi（微信小程序返回的是GCJ02）
+   * @returns 地址信息
+   */
+  async reverseGeocodeWithAmap(
+    longitude: number,
+    latitude: number,
+    coordType: string = 'autonavi', // 默认使用GCJ02坐标系（微信小程序标准）
+  ): Promise<LocationInfo> {
+    try {
+      // 验证经纬度范围
+      if (
+        longitude < -180 ||
+        longitude > 180 ||
+        latitude < -90 ||
+        latitude > 90
+      ) {
+        throw new HttpException('经纬度格式不正确', HttpStatus.BAD_REQUEST);
+      }
+
+      // 构建请求参数
+      const params: any = {
+        key: AMAP_CONFIG.key,
+        location: `${longitude},${latitude}`, // 高德地图格式：经度,纬度（注意与腾讯地图相反）
+        radius: 300, // 搜索半径（米）
+        extensions: 'all', // 返回详细信息，包括POI
+        roadlevel: 1, // 道路等级：0-返回所有道路，1-只返回主干道
+        output: 'json', // 返回格式
+      };
+
+      // 如果指定了坐标类型，添加坐标类型参数
+      if (coordType && coordType !== 'autonavi') {
+        params.coordsys = coordType; // gps, autonavi, baidu
+      }
+
+      // 如果需要签名验证，生成签名
+      // 高德地图Web服务API签名规则：对参数进行排序后拼接，然后MD5加密
+      const sortedKeys = Object.keys(params).sort();
+      const queryString = sortedKeys
+        .map((key) => `${key}=${params[key]}`)
+        .join('&');
+      const signature = crypto
+        .createHash('md5')
+        .update(queryString + AMAP_CONFIG.secret)
+        .digest('hex');
+      params.sig = signature;
+
+      // 调用高德地图逆地理编码API
+      const url = AMAP_CONFIG.baseUrl;
+      const response = await axios.get(url, { params });
+
+      // 检查API返回状态
+      if (response.data.status !== '1') {
+        throw new HttpException(
+          `高德地图服务错误: ${response.data.info || '未知错误'}`,
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+
+      const regeocode = response.data.regeocode;
+      if (!regeocode || !regeocode.addressComponent) {
+        throw new HttpException('无法解析地址信息', HttpStatus.NOT_FOUND);
+      }
+
+      const addressComponent = regeocode.addressComponent;
+
+      // 解析POI信息（用于精确定位）
+      let nearestPoi: PoiInfo | undefined;
+      let pois: PoiInfo[] | undefined;
+
+      if (regeocode.pois && regeocode.pois.length > 0) {
+        // 按距离排序，找到最近的POI
+        const sortedPois = regeocode.pois
+          .filter((poi: any) => poi.distance !== undefined)
+          .sort((a: any, b: any) => parseFloat(a.distance) - parseFloat(b.distance));
+
+        pois = sortedPois.map((poi: any) => ({
+          id: poi.id || poi.poiid || '',
+          title: poi.name || '',
+          address: poi.address || '',
+          category: poi.type || poi.business_area || '',
+          distance: parseFloat(poi.distance || '0'),
+          location: {
+            lat: parseFloat(poi.location?.split(',')[1] || poi.lat || latitude.toString()),
+            lng: parseFloat(poi.location?.split(',')[0] || poi.lng || longitude.toString()),
+          },
+        }));
+
+        if (pois && pois.length > 0) {
+          nearestPoi = pois[0];
+        }
+      }
+
+      // 构建地址信息
+      const street = addressComponent.street || addressComponent.township || '';
+      const streetNumber = addressComponent.number || '';
+      
+      // 使用POI信息增强地址精度（如果POI在50米内，优先使用POI地址）
+      let preciseAddress = regeocode.formatted_address || 
+        (addressComponent.province || '') + 
+        (addressComponent.city || '') + 
+        (addressComponent.district || '') + 
+        street + streetNumber;
+      if (nearestPoi && nearestPoi.distance < 50) {
+        // 如果最近的POI在50米内，使用POI名称作为更精确的地址
+        preciseAddress = `${nearestPoi.title}${preciseAddress ? `（${preciseAddress}）` : ''}`;
+      }
+
+      // 构建完整地址（包含更多层级信息）
+      const fullAddressParts = [
+        addressComponent.province,
+        addressComponent.city || addressComponent.province,
+        addressComponent.district,
+        addressComponent.township || addressComponent.street,
+        streetNumber,
+      ].filter(Boolean);
+
+      const fullAddress = fullAddressParts.join('') || preciseAddress;
+      
+      // 构建粗略地址（省市区）
+      const roughAddress = [
+        addressComponent.province,
+        addressComponent.city || addressComponent.province,
+        addressComponent.district,
+      ]
+        .filter(Boolean)
+        .join('') || '';
+
+      // 解析地址信息
+      const locationInfo: LocationInfo = {
+        province: addressComponent.province || '',
+        city: addressComponent.city || addressComponent.province || '',
+        district: addressComponent.district || '',
+        street: street,
+        streetNumber: streetNumber,
+        address: fullAddress,
+        formattedAddress: preciseAddress,
+        roughAddress: roughAddress,
+        adcode: addressComponent.adcode || '',
+        nearestPoi,
+        pois,
+      };
+
+      return locationInfo;
+    } catch (error) {
+      console.error('高德地图逆地理编码失败:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      if (error.response) {
+        throw new HttpException(
+          `高德地图服务请求失败: ${error.response.data?.info || error.message}`,
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+      throw new HttpException(
+        '获取地址信息失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
    * 批量逆地理编码（多个经纬度点）
    * @param locations 经纬度数组 [{longitude, latitude}, ...]
    * @returns 地址信息数组
@@ -199,6 +365,36 @@ export class GeolocationService {
       return results;
     } catch (error) {
       console.error('批量逆地理编码失败:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '批量获取地址信息失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 使用高德地图批量逆地理编码（多个经纬度点）
+   * @param locations 经纬度数组 [{longitude, latitude}, ...]
+   * @returns 地址信息数组
+   */
+  async batchReverseGeocodeWithAmap(
+    locations: Array<{ longitude: number; latitude: number }>,
+  ): Promise<LocationInfo[]> {
+    try {
+      // 高德地图批量逆地理编码需要循环调用单个接口
+      // 默认使用GCJ02坐标系（微信小程序标准）
+      const results = await Promise.all(
+        locations.map((loc) =>
+          this.reverseGeocodeWithAmap(loc.longitude, loc.latitude, 'autonavi'),
+        ),
+      );
+
+      return results;
+    } catch (error) {
+      console.error('高德地图批量逆地理编码失败:', error);
       if (error instanceof HttpException) {
         throw error;
       }
