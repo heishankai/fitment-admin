@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, In } from 'typeorm';
 import { WechatUser } from '../wechat-user/wechat-user.entity';
 import { CraftsmanUser } from '../craftsman-user/craftsman-user.entity';
 import { Order, OrderStatus } from '../order/order.entity';
+import { Materials } from '../materials/materials.entity';
 
 @Injectable()
 export class HomeService {
@@ -14,6 +15,8 @@ export class HomeService {
     private readonly craftsmanUserRepository: Repository<CraftsmanUser>,
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
+    @InjectRepository(Materials)
+    private readonly materialsRepository: Repository<Materials>,
   ) {}
 
   /**
@@ -119,7 +122,7 @@ export class HomeService {
     })));
 
     const currentMonthOrderCount = currentMonthCompletedOrders.length;
-    const currentMonthOrderAmount = this.calculateOrderAmount(currentMonthCompletedOrders);
+    const currentMonthOrderAmount = await this.calculateOrderAmount(currentMonthCompletedOrders);
 
     console.log('本月订单金额:', currentMonthOrderAmount);
 
@@ -134,7 +137,7 @@ export class HomeService {
     console.log('上月完成的订单数量:', lastMonthCompletedOrders.length);
 
     const lastMonthOrderCount = lastMonthCompletedOrders.length;
-    const lastMonthOrderAmount = this.calculateOrderAmount(lastMonthCompletedOrders);
+    const lastMonthOrderAmount = await this.calculateOrderAmount(lastMonthCompletedOrders);
 
     // 计算订单数量变化百分比
     const orderCountPercentage = this.calculatePercentage(
@@ -221,8 +224,29 @@ export class HomeService {
    * @param orders 订单列表
    * @returns 总金额
    */
-  private calculateOrderAmount(orders: Order[]): number {
+  private async calculateOrderAmount(orders: Order[]): Promise<number> {
     let totalAmount = 0;
+
+    // 获取所有订单ID
+    const orderIds = orders.map(order => order.id);
+
+    // 批量查询所有订单的辅材
+    const materialsList = orderIds.length > 0
+      ? await this.materialsRepository.find({
+          where: {
+            orderId: In(orderIds),
+          },
+        })
+      : [];
+
+    // 按订单ID分组辅材
+    const materialsByOrderId: { [key: number]: Materials[] } = {};
+    for (const material of materialsList) {
+      if (!materialsByOrderId[material.orderId]) {
+        materialsByOrderId[material.orderId] = [];
+      }
+      materialsByOrderId[material.orderId].push(material);
+    }
 
     for (const order of orders) {
       // 计算主工价单金额
@@ -242,11 +266,10 @@ export class HomeService {
         }
       }
 
-      // 计算辅材金额
-      if (order.materials_list && order.materials_list.length > 0) {
-        for (const material of order.materials_list) {
-          totalAmount += Number(material.total_price) || 0;
-        }
+      // 计算辅材金额（从独立的 materials 表查询）
+      const orderMaterials = materialsByOrderId[order.id] || [];
+      for (const material of orderMaterials) {
+        totalAmount += Number(material.total_price) || 0;
       }
     }
 

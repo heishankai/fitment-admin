@@ -5,10 +5,11 @@ import { HomeController } from './home.controller';
 import { WechatUser } from '../wechat-user/wechat-user.entity';
 import { CraftsmanUser } from '../craftsman-user/craftsman-user.entity';
 import { Order } from '../order/order.entity';
+import { Materials } from '../materials/materials.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([WechatUser, CraftsmanUser, Order]),
+    TypeOrmModule.forFeature([WechatUser, CraftsmanUser, Order, Materials]),
   ],
   controllers: [HomeController],
   providers: [HomeService],

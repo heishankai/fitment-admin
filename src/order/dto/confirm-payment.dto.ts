@@ -10,14 +10,13 @@ export class ConfirmPaymentDto {
 
   @IsNotEmpty({ message: '支付类型不能为空' })
   @IsString({ message: '支付类型必须是字符串' })
-  @IsIn(['work_prices', 'sub_work_prices', 'materials_list'], { message: '支付类型必须是 work_prices、sub_work_prices 或 materials_list' })
-  pay_type: string; // 支付类型：work_prices、sub_work_prices 或 materials_list
+  @IsIn(['work_prices', 'sub_work_prices'], { message: '支付类型必须是 work_prices 或 sub_work_prices' })
+  pay_type: string; // 支付类型：work_prices 或 sub_work_prices
 
   /**
    * 子工价索引（当 pay_type 为 sub_work_prices 时必填）
-   * 辅材索引（当 pay_type 为 materials_list 时必填）
    */
-  @ValidateIf((o) => o.pay_type === 'sub_work_prices' || o.pay_type === 'materials_list')
+  @ValidateIf((o) => o.pay_type === 'sub_work_prices')
   @IsNotEmpty({ message: '索引不能为空' })
   @IsNumber({}, { message: '索引必须是数字' })
   @Min(0, { message: '索引不能小于0' })

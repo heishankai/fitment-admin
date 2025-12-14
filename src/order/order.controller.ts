@@ -19,14 +19,11 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { AcceptOrderDto } from './dto/accept-order.dto';
 import { QueryCraftsmanOrdersDto } from './dto/query-craftsman-orders.dto';
-import { AddConstructionProgressDto } from './dto/add-construction-progress.dto';
-import { AddMaterialsDto } from './dto/add-materials.dto';
 import { AddWorkPricesDto } from './dto/add-work-prices.dto';
 import { QueryOrderDto } from './dto/query-order.dto';
 import { AssignOrderDto } from './dto/assign-order.dto';
 import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
 import { AcceptWorkPriceDto } from './dto/accept-work-price.dto';
-import { AcceptMaterialsDto } from './dto/accept-materials.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 
 @Controller('order')
@@ -291,68 +288,6 @@ export class OrderController {
     }
   }
 
-  /**
-   * 添加施工进度
-   * @param request 请求对象（包含从token解析的用户信息）
-   * @param body 施工进度信息
-   * @returns 更新后的订单
-   */
-  @Post('construction-progress')
-  async addConstructionProgress(
-    @Request() request: any,
-    @Body(ValidationPipe) body: AddConstructionProgressDto,
-  ) {
-    try {
-      const userId = request.user?.userid || request.user?.userId;
-      if (!userId) {
-        throw new HttpException('未授权', HttpStatus.UNAUTHORIZED);
-      }
-
-      return await this.orderService.addConstructionProgress(
-        body.orderId,
-        body.progress,
-        userId,
-      );
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new HttpException(
-        '添加施工进度失败',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  /**
-   * 添加辅材
-   * @param request 请求对象（包含从token解析的用户信息）
-   * @param body 辅材信息
-   * @returns null，由全局拦截器包装成标准响应
-   */
-  @Post('materials')
-  async addMaterials(
-    @Request() request: any,
-    @Body(ValidationPipe) body: AddMaterialsDto,
-  ): Promise<null> {
-    try {
-      const userId = request.user?.userid || request.user?.userId;
-      if (!userId) {
-        throw new HttpException('未授权', HttpStatus.UNAUTHORIZED);
-      }
-
-      return await this.orderService.addMaterials(
-        body.orderId,
-        body.materials,
-        userId,
-      );
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new HttpException('添加辅材失败', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
 
   /**
    * 添加工价数据
@@ -447,26 +382,6 @@ export class OrderController {
     }
   }
 
-  /**
-   * 验收辅材
-   * @param body 验收信息
-   * @returns null，由全局拦截器包装成标准响应
-   */
-  @Post('accept-materials')
-  async acceptMaterials(@Body(ValidationPipe) body: AcceptMaterialsDto): Promise<null> {
-    try {
-      return await this.orderService.acceptMaterials(body);
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      this.logger.error('验收辅材失败:', error);
-      throw new HttpException(
-        '验收辅材失败',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
 
   /**
    * 取消订单

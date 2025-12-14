@@ -85,37 +85,6 @@ export class Order {
   @Column({ type: 'varchar', length: 50, default: '待接单' })
   order_status_name: string; // 订单状态名称
 
-  // 施工进度
-  @Column({
-    type: 'json',
-    nullable: true,
-  })
-  construction_progress: Array<{
-    start_time: string; // 上班打卡时间
-    end_time: string; // 下班打卡时间
-    location: string; // 打卡位置
-    photos: string[]; // 打卡照片
-  }>; // 施工进度数组
-
-  // 辅材列表
-  @Column({
-    type: 'json',
-    nullable: true,
-  })
-  materials_list: Array<{
-    total_price: number; // 总价
-    is_paid: boolean; // 用户是否已付款
-    total_is_accepted: boolean; // 总验收状态
-    commodity_list: Array<{
-      id: number; // 商品ID
-      commodity_name: string; // 商品名称
-      commodity_price: string; // 商品价格
-      commodity_unit: string; // 商品单位
-      quantity: number; // 数量
-      commodity_cover?: string[]; // 商品封面
-    }>; // 商品列表
-  }>; // 辅材列表数组
-
   // 工价列表
   @Column({
     type: 'json',

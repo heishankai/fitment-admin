@@ -38,6 +38,9 @@ import {
   WithdrawModule,
   WalletTransactionModule,
   HomeModule,
+  ConstructionProgressModule,
+  MaterialsModule,
+  PlatformIncomeRecordModule,
 } from './index';
 // 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
@@ -89,6 +92,9 @@ import { WstModule } from './wst/wst.module';
     WithdrawModule, // 提现申请审核模块
     WalletTransactionModule, // 账户明细模块
     HomeModule, // 首页统计模块
+    ConstructionProgressModule, // 施工进度模块
+    MaterialsModule, // 辅材模块
+    PlatformIncomeRecordModule, // 平台收支记录模块
   ],
   // 导入其他模块的数组
   controllers: [AppController], // 注册控制器，处理 HTTP 请求

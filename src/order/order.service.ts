@@ -10,7 +10,6 @@ import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { QueryOrderDto } from './dto/query-order.dto';
 import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
 import { AcceptWorkPriceDto } from './dto/accept-work-price.dto';
-import { AcceptMaterialsDto } from './dto/accept-materials.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { ORDER_MATCH_CONFIG } from '../common/constants/app.constants';
 import { BadRequestException } from '@nestjs/common';
@@ -612,20 +611,6 @@ export class OrderService {
       }));
     }
 
-    // 标准化 materials_list
-    if (order.materials_list && Array.isArray(order.materials_list)) {
-      order.materials_list = order.materials_list.map((material) => ({
-        ...material,
-        is_paid: material.is_paid !== undefined ? material.is_paid : false,
-        total_is_accepted:
-          material.total_is_accepted !== undefined
-            ? material.total_is_accepted
-            : false,
-        total_price:
-          material.total_price !== undefined ? material.total_price : 0,
-        commodity_list: material.commodity_list || [],
-      }));
-    }
 
     return order;
   }
@@ -828,167 +813,6 @@ export class OrderService {
     return uniqueOrders.map((order) => this.normalizeOrderWorkPrices(order));
   }
 
-  /**
-   * 添加施工进度
-   * @param orderId 订单ID
-   * @param progress 施工进度信息
-   * @param craftsmanUserId 工匠用户ID（用于验证订单是否属于该工匠）
-   * @returns 更新后的订单
-   */
-  async addConstructionProgress(
-    orderId: number,
-    progress: {
-      start_time: string;
-      end_time: string;
-      location: string;
-      photos?: string[];
-    },
-    craftsmanUserId: number,
-  ): Promise<Order> {
-    try {
-      // 1. 查找订单
-      const order = await this.orderRepository.findOne({
-        where: { id: orderId },
-      });
-
-      if (!order) {
-        throw new HttpException('订单不存在', HttpStatus.NOT_FOUND);
-      }
-
-      // 2. 验证订单是否属于该工匠
-      if (order.craftsman_user_id !== craftsmanUserId) {
-        throw new HttpException(
-          '无权操作此订单',
-          HttpStatus.FORBIDDEN,
-        );
-      }
-
-      // 3. 验证订单状态（只有已接单的订单才能添加施工进度）
-      if (order.order_status !== OrderStatus.ACCEPTED) {
-        throw new HttpException(
-          '只有已接单的订单才能添加施工进度',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      // 4. 初始化 construction_progress 数组（如果不存在）
-      if (!order.construction_progress) {
-        order.construction_progress = [];
-      }
-
-      // 5. 添加新的施工进度
-      order.construction_progress.push({
-        start_time: progress.start_time,
-        end_time: progress.end_time,
-        location: progress.location,
-        photos: progress.photos || [],
-      });
-
-      // 6. 保存订单
-      const updatedOrder = await this.orderRepository.save(order);
-
-      // 7. 加载完整的订单信息（包含关联信息）
-      const fullOrder = await this.findOne(updatedOrder.id);
-
-      return fullOrder;
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      console.error('添加施工进度失败:', error);
-      throw new HttpException(
-        '添加施工进度失败',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  /**
-   * 添加辅材
-   * @param orderId 订单ID
-   * @param materials 辅材信息数组
-   * @param craftsmanUserId 工匠用户ID（用于验证订单是否属于该工匠）
-   * @returns null，由全局拦截器包装成标准响应
-   */
-  async addMaterials(
-    orderId: number,
-    materials: Array<{
-      total_price: number;
-      commodity_list: Array<{
-        id: number;
-        commodity_name: string;
-        commodity_price: string;
-        commodity_unit: string;
-        quantity: number;
-        commodity_cover?: string[];
-      }>;
-    }>,
-    craftsmanUserId: number,
-  ): Promise<null> {
-    try {
-      // 1. 查找订单
-      const order = await this.orderRepository.findOne({
-        where: { id: orderId },
-      });
-
-      if (!order) {
-        throw new HttpException('订单不存在', HttpStatus.NOT_FOUND);
-      }
-
-      // 2. 验证订单是否属于该工匠
-      if (order.craftsman_user_id !== craftsmanUserId) {
-        throw new HttpException(
-          '无权操作此订单',
-          HttpStatus.FORBIDDEN,
-        );
-      }
-
-      // 3. 验证订单状态（只有已接单的订单才能添加辅材）
-      if (order.order_status !== OrderStatus.ACCEPTED) {
-        throw new HttpException(
-          '只有已接单的订单才能添加辅材',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      // 4. 初始化 materials_list 数组（如果不存在）
-      if (!order.materials_list) {
-        order.materials_list = [];
-      }
-
-      // 5. 遍历 materials 数组，添加每个辅材项
-      materials.forEach((materialItem) => {
-        order.materials_list.push({
-          total_price: materialItem.total_price,
-          is_paid: false, // 默认未付款
-          total_is_accepted: false, // 默认未验收
-          commodity_list: materialItem.commodity_list.map((item) => ({
-            id: item.id,
-            commodity_name: item.commodity_name,
-            commodity_price: item.commodity_price,
-            commodity_unit: item.commodity_unit,
-            quantity: item.quantity,
-            commodity_cover: item.commodity_cover || [],
-          })),
-        });
-      });
-
-      // 6. 保存订单
-      await this.orderRepository.save(order);
-
-      // 7. 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
-      return null;
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      console.error('添加辅材失败:', error);
-      throw new HttpException(
-        '添加辅材失败',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
 
   /**
    * 添加工价数据
@@ -1384,39 +1208,6 @@ export class OrderService {
 
         // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
         return null;
-      } else if (pay_type === 'materials_list') {
-        // 检查 subItem 参数是否存在
-        if (subItem === undefined || subItem === null) {
-          throw new HttpException(
-            '辅材索引不能为空',
-            HttpStatus.BAD_REQUEST,
-          );
-        }
-
-        // 检查 materials_list 是否存在且有数据
-        if (!order.materials_list || !Array.isArray(order.materials_list) || order.materials_list.length === 0) {
-          throw new HttpException(
-            '订单辅材列表为空，无法确认支付',
-            HttpStatus.BAD_REQUEST,
-          );
-        }
-
-        // 检查索引是否有效
-        if (subItem < 0 || subItem >= order.materials_list.length) {
-          throw new HttpException(
-            `辅材索引 ${subItem} 超出范围，当前辅材列表长度为 ${order.materials_list.length}`,
-            HttpStatus.BAD_REQUEST,
-          );
-        }
-
-        // 将 materials_list 数组中指定索引项的 is_paid 设置为 true
-        order.materials_list[subItem].is_paid = true;
-
-        // 保存订单
-        await this.orderRepository.save(order);
-
-        // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
-        return null;
       } else {
         throw new HttpException(
           `不支持的支付类型: ${pay_type}`,
@@ -1779,89 +1570,5 @@ export class OrderService {
     }
   }
 
-  /**
-   * 验收辅材
-   * @param acceptMaterialsDto 验收信息
-   * @returns null，由全局拦截器包装成标准响应
-   */
-  async acceptMaterials(
-    acceptMaterialsDto: AcceptMaterialsDto,
-  ): Promise<null> {
-    try {
-      const { order_id, materials_item } = acceptMaterialsDto;
-
-      // 1. 查找订单
-      const order = await this.orderRepository.findOne({
-        where: { id: order_id },
-      });
-
-      if (!order) {
-        throw new HttpException('订单不存在', HttpStatus.NOT_FOUND);
-      }
-
-      // 2. 验证订单是否有接单的工匠
-      if (!order.craftsman_user_id) {
-        throw new HttpException(
-          '订单尚未接单，无法验收',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      // 3. 检查 materials_list 是否存在且有数据
-      if (!order.materials_list || !Array.isArray(order.materials_list) || order.materials_list.length === 0) {
-        throw new HttpException(
-          '订单辅材列表为空，无法验收',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      // 4. 验证索引是否有效
-      if (
-        materials_item < 0 ||
-        materials_item >= order.materials_list.length
-      ) {
-        throw new HttpException(
-          `辅材索引 ${materials_item} 超出范围`,
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      const material = order.materials_list[materials_item];
-
-      // 5. 检查是否已付款
-      if (material.is_paid !== true) {
-        throw new HttpException(
-          '辅材尚未付款，请联系平台付款',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      // 6. 检查是否已经验收过
-      if (material.total_is_accepted === true) {
-        throw new HttpException(
-          `辅材索引 ${materials_item} 已经验收过，无法重复验收`,
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      // 7. 设置验收状态（注意：辅材验收不打款）
-      material.total_is_accepted = true;
-
-      // 8. 保存订单
-      await this.orderRepository.save(order);
-
-      // 9. 返回null，全局拦截器会自动包装成标准响应
-      return null;
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      console.error('验收辅材失败:', error);
-      throw new HttpException(
-        '验收辅材失败',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
 }
 
