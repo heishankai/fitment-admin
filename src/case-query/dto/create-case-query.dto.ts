@@ -76,4 +76,9 @@ export class CreateCaseQueryDto {
   @IsArray()
   @IsOptional()
   bathroom_image?: string[];
+
+  // 厨房
+  @IsArray()
+  @IsOptional()
+  kitchen_image?: string[];
 }

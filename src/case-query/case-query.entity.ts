@@ -67,6 +67,10 @@ export class CaseQuery {
   @Column({ type: 'json', nullable: true })
   bathroom_image: string[];
 
+  // 厨房
+  @Column({ type: 'json', nullable: true })
+  kitchen_image: string[];
+
   // 创建时间
   @CreateDateColumn()
   createdAt: Date;

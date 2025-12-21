@@ -1,9 +1,12 @@
 import {
   IsNotEmpty,
   IsNumber,
+  IsEnum,
+  IsString,
   IsOptional,
   Min,
 } from 'class-validator';
+import { CostType } from '../platform-income-record.entity';
 
 /**
  * 创建平台收支记录DTO
@@ -14,12 +17,15 @@ export class CreatePlatformIncomeRecordDto {
   orderId: number; // 订单ID
 
   @IsOptional()
-  @IsNumber()
-  @Min(0, { message: '辅材费用不能小于0' })
-  materials_cost?: number; // 订单的辅材费用，默认是0
+  @IsString()
+  order_no?: string; // 订单编号（可选，如果不提供会从订单中获取）
 
-  @IsOptional()
+  @IsNotEmpty({ message: '费用类型不能为空' })
+  @IsEnum(CostType, { message: '费用类型必须是 materials 或 service_fee' })
+  cost_type: CostType; // 费用类型：'materials' | 'service_fee'
+
+  @IsNotEmpty({ message: '费用金额不能为空' })
   @IsNumber()
-  @Min(0, { message: '服务费不能小于0' })
-  total_service_fee?: number; // 订单收取的服务费，默认是0
+  @Min(0, { message: '费用金额不能小于0' })
+  cost_amount: number; // 费用金额
 }

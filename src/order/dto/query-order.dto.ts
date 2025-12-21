@@ -44,6 +44,28 @@ export class QueryOrderDto {
   work_kind_name?: string;
 
   /**
+   * 订单号（精确匹配）
+   */
+  @IsOptional()
+  @IsString({ message: '订单号必须是字符串' })
+  order_no?: string;
+
+  /**
+   * 订单状态（精确匹配，1: 待接单, 2: 已接单, 3: 已完成, 4: 已取消）
+   */
+  @IsOptional()
+  @IsNumber({}, { message: '订单状态必须是数字' })
+  @Type(() => Number)
+  order_status?: number;
+
+  /**
+   * 订单类型（精确匹配，工长订单:gangmaster ,工匠订单:craftsman）
+   */
+  @IsOptional()
+  @IsString({ message: '订单类型必须是字符串' })
+  order_type?: string;
+
+  /**
    * 日期范围：YYYY-MM-DD 格式数组，例如 ["2026-01-08", "2026-01-21"]（用于查询创建日期）
    */
   @IsOptional()

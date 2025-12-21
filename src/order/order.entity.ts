@@ -6,9 +6,11 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  OneToMany,
 } from 'typeorm';
 import { WechatUser } from '../wechat-user/wechat-user.entity';
 import { CraftsmanUser } from '../craftsman-user/craftsman-user.entity';
+import { WorkPriceItem } from '../work-price-item/work-price-item.entity';
 
 /**
  * 订单状态枚举
@@ -38,6 +40,9 @@ export class Order {
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   houseType: string; // 房屋类型：new/old
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  houseTypeName: string; // 房屋类型：新房/老房
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   roomType: string; // 户型：如"2居室"
@@ -78,6 +83,14 @@ export class Order {
   @Column({ type: 'varchar', length: 50, nullable: true })
   work_kind_id: string; // 工种ID
 
+  // 订单编号
+  @Column({ type: 'varchar', length: 50, unique: true, nullable: true })
+  order_no: string; // 订单号：[业务前缀][时间戳][当日递增序列]，例如：GM20250308152330000123、CM20250308152330000456
+
+  // 订单类型
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  order_type: string; // 订单类型：工长订单:gangmaster ,工匠订单:craftsman
+
   // 订单状态
   @Column({ type: 'int', default: OrderStatus.PENDING })
   order_status: number; // 订单状态：1: 待接单, 2: 已接单, 3: 已完成, 4: 已取消
@@ -85,72 +98,42 @@ export class Order {
   @Column({ type: 'varchar', length: 50, default: '待接单' })
   order_status_name: string; // 订单状态名称
 
-  // 工价列表
-  @Column({
-    type: 'json',
-    nullable: true,
-  })
-  work_prices: Array<{
-    visiting_service_num: number; // 上门服务数量
-    total_is_accepted: boolean; // 总验收状态
-    total_price: number; // 施工费用（不包含工长费用）
-    area: number | string; // 平米数
-    total_service_fee: number; // 平台服务费
-    craftsman_user_work_kind_name: string; // 当前用户的工种名称
-    is_paid: boolean; // 用户是否已付款
-    gangmaster_cost?: number; // 工长费用（仅当 craftsman_user_work_kind_name 为"工长"时存在）
-    prices_list: Array<{
-      id: number; // 工价id
-      quantity: number; // 数量
-      work_kind: {
-        id: number; // 工种id
-        work_kind_name: string; // 工种名称
-      };
-      work_price: string; // 工价
-      work_title: string; // 工价标题
-      labour_cost: {
-        id: number; // 单位id
-        labour_cost_name: string; // 单位名称
-      };
-      work_kind_id: number; // 工种id
-      minimum_price: string; // 最低价格
-      is_set_minimum_price: string; // 是否设置最低价格
-      is_accepted?: boolean; // 验收状态（仅当work_kind_name为"水电"或"泥瓦工"时存在）
-    }>; // 价格列表
-  }>; // 工价列表数组
+  // 平台服务费和上门服务数量（仅在主工价生成时计算得出）
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  total_service_fee: number; // 平台服务费
 
-  // 子工价列表（当 work_prices 已存在时，后续添加的工价单）
+  @Column({ type: 'boolean', default: false })
+  total_service_fee_is_paid: boolean; // 平台服务费是否已支付
+
+  @Column({ type: 'int', nullable: true })
+  visiting_service_num: number; // 上门服务数量
+
+  @Column({ type: 'int', nullable: true })
+  gangmaster_cost: number; // 工长工费
+
+  // 订单关联关系
+  @Column({ nullable: true })
+  parent_order_id: number; // 指向工长订单id（仅被分配的工匠订单使用）
+
+  @Column({ type: 'boolean', default: false })
+  is_assigned: boolean; // 是否是被分配的订单
+
+  // 工价项关联（通过 WorkPriceItem 实体表管理，不再使用 JSON 字段）
+  @OneToMany(() => WorkPriceItem, (workPriceItem) => workPriceItem.order)
+  work_price_items: WorkPriceItem[]; // 工价项列表
+
+  // 临时保留旧字段以避免编译错误（后续会重构移除）
   @Column({
     type: 'json',
     nullable: true,
   })
-  sub_work_prices: Array<{
-    visiting_service_num: number; // 上门服务费数量（子工价单为0）
-    total_is_accepted: boolean; // 总验收状态
-    total_price: number; // 施工费用（不包含工长费用）
-    area: number | string; // 平米数
-    total_service_fee: number; // 平台服务费
-    craftsman_user_work_kind_name: string; // 当前用户的工种名称
-    is_paid: boolean; // 用户是否已付款
-    prices_list: Array<{
-      id: number; // 工价id
-      quantity: number; // 数量
-      work_kind: {
-        id: number; // 工种id
-        work_kind_name: string; // 工种名称
-      };
-      work_price: string; // 工价
-      work_title: string; // 工价标题
-      labour_cost: {
-        id: number; // 单位id
-        labour_cost_name: string; // 单位名称
-      };
-      work_kind_id: number; // 工种id
-      minimum_price: string; // 最低价格
-      is_set_minimum_price: string; // 是否设置最低价格
-      // 子工价单不包含验收字段
-    }>; // 价格列表
-  }>; // 子工价列表数组
+  work_prices?: any; // 旧的主工价列表（已废弃，使用 work_price_items）
+
+  @Column({
+    type: 'json',
+    nullable: true,
+  })
+  sub_work_prices?: any; // 旧的子工价列表（已废弃，使用 work_price_items）
 
   // 关联用户
   @Column()

@@ -80,7 +80,19 @@ export class ConstructionProgressService {
         );
       }
 
-      // 3. 验证订单状态（只有已接单的订单才能添加施工进度）
+      // 3. 验证订单状态（只有已接单的订单才能添加施工进度，已完成和已取消的订单不允许）
+      if (order.order_status === OrderStatus.COMPLETED) {
+        throw new HttpException(
+          '订单已完成，无法添加施工进度',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      if (order.order_status === OrderStatus.CANCELLED) {
+        throw new HttpException(
+          '订单已取消，无法添加施工进度',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
       if (order.order_status !== OrderStatus.ACCEPTED) {
         throw new HttpException(
           '只有已接单的订单才能添加施工进度',

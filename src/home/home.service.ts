@@ -269,7 +269,7 @@ export class HomeService {
       // 计算辅材金额（从独立的 materials 表查询）
       const orderMaterials = materialsByOrderId[order.id] || [];
       for (const material of orderMaterials) {
-        totalAmount += Number(material.total_price) || 0;
+        totalAmount += Number(material.settlement_amount) || 0;
       }
     }
 

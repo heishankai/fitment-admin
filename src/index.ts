@@ -30,3 +30,4 @@ export { HomeModule } from './home/home.module';
 export { ConstructionProgressModule } from './construction-progress/construction-progress.module';
 export { MaterialsModule } from './materials/materials.module';
 export { PlatformIncomeRecordModule } from './platform-income-record/platform-income-record.module';
+export { WorkPriceItemModule } from './work-price-item/work-price-item.module';

@@ -15,6 +15,7 @@ import {
 import { Public } from '../auth/public.decorator';
 import { OrderService } from './order.service';
 import { OrderGateway } from './order.gateway';
+import { WorkPriceItemService } from '../work-price-item/work-price-item.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { AcceptOrderDto } from './dto/accept-order.dto';
@@ -22,9 +23,12 @@ import { QueryCraftsmanOrdersDto } from './dto/query-craftsman-orders.dto';
 import { AddWorkPricesDto } from './dto/add-work-prices.dto';
 import { QueryOrderDto } from './dto/query-order.dto';
 import { AssignOrderDto } from './dto/assign-order.dto';
+import { AssignWorkPricesDto } from './dto/assign-work-prices.dto';
 import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
 import { AcceptWorkPriceDto } from './dto/accept-work-price.dto';
+import { AcceptSingleWorkPriceDto } from './dto/accept-single-work-price.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
+import { ConfirmWorkPriceServiceFeeDto } from './dto/confirm-work-price-service-fee.dto';
 
 @Controller('order')
 export class OrderController {
@@ -33,6 +37,7 @@ export class OrderController {
   constructor(
     private readonly orderService: OrderService,
     private readonly orderGateway: OrderGateway,
+    private readonly workPriceItemService: WorkPriceItemService,
   ) {}
 
   /**
@@ -110,6 +115,48 @@ export class OrderController {
       }
       throw new HttpException(
         error?.message || '创建订单失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 根据订单ID查询所有子工价组
+   * @param id 订单ID
+   * @returns 子工价组列表，每个组包含统计信息
+   */
+  @Get(':id/sub-groups')
+  async getSubWorkPriceGroups(@Param('id', ParseIntPipe) id: number) {
+    try {
+      return await this.workPriceItemService.findSubWorkPriceGroupsByOrderId(
+        id,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '查询子工价组失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 标记订单的平台服务费为已支付
+   * @param id 订单ID
+   */
+  @Put(':id/service-fee/pay')
+  async markServiceFeeAsPaid(@Param('id', ParseIntPipe) id: number) {
+    try {
+      await this.orderService.markServiceFeeAsPaid(id);
+      return { success: true, message: '平台服务费已标记为已支付' };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '标记平台服务费为已支付失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -382,6 +429,50 @@ export class OrderController {
     }
   }
 
+  /**
+   * 单个工价验收
+   * @param body 验收信息
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  @Post('accept-single-work-price')
+  async acceptSingleWorkPrice(@Body(ValidationPipe) body: AcceptSingleWorkPriceDto): Promise<null> {
+    try {
+      return await this.orderService.acceptSingleWorkPrice(body);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('单个工价验收失败:', error);
+      throw new HttpException(
+        '单个工价验收失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+
+  /**
+   * 确认工价项平台服务费支付
+   * @param body 确认支付信息
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  @Post('confirm-work-price-service-fee')
+  async confirmWorkPriceServiceFee(
+    @Body(ValidationPipe) body: ConfirmWorkPriceServiceFeeDto,
+  ): Promise<null> {
+    try {
+      return await this.orderService.confirmWorkPriceServiceFee(body);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('确认工价项平台服务费支付失败:', error);
+      throw new HttpException(
+        '确认工价项平台服务费支付失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 
   /**
    * 取消订单
@@ -399,6 +490,29 @@ export class OrderController {
       this.logger.error('取消订单失败:', error);
       throw new HttpException(
         '取消订单失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 将多个工价分配给某个工匠，生成工匠订单
+   * @param body 分配工价参数
+   * @returns 创建的工匠订单
+   */
+  @Post('assign-work-prices')
+  async assignWorkPricesToCraftsman(
+    @Body(ValidationPipe) body: AssignWorkPricesDto,
+  ) {
+    try {
+      return await this.orderService.assignWorkPricesToCraftsman(body);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('分配工价给工匠失败:', error);
+      throw new HttpException(
+        '分配工价给工匠失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

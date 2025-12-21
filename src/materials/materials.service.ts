@@ -8,10 +8,11 @@ import { Repository } from 'typeorm';
 import { Materials } from './materials.entity';
 import { CreateMaterialsDto } from './dto/create-materials.dto';
 import { AcceptMaterialsDto } from './dto/accept-materials.dto';
-import { ConfirmMaterialsPaymentDto } from './dto/confirm-payment.dto';
+import { MaterialsResponseDto, CommodityItemResponse } from './dto/materials-response.dto';
 import { Order } from '../order/order.entity';
 import { OrderStatus } from '../order/order.entity';
 import { PlatformIncomeRecordService } from '../platform-income-record/platform-income-record.service';
+import { CostType } from '../platform-income-record/platform-income-record.entity';
 
 @Injectable()
 export class MaterialsService {
@@ -26,9 +27,9 @@ export class MaterialsService {
   /**
    * 根据订单ID查询辅材列表
    * @param orderId 订单ID
-   * @returns 辅材列表
+   * @returns 辅材响应数据（包含商品列表和总价）
    */
-  async findByOrderId(orderId: number): Promise<Materials[]> {
+  async findByOrderId(orderId: number): Promise<MaterialsResponseDto> {
     try {
       // 验证订单是否存在
       const order = await this.orderRepository.findOne({
@@ -40,10 +41,39 @@ export class MaterialsService {
       }
 
       // 查询该订单的所有辅材
-      return await this.materialsRepository.find({
+      const materials = await this.materialsRepository.find({
         where: { orderId },
         order: { createdAt: 'DESC' },
       });
+
+      // 转换为商品列表格式
+      const commodity_list: CommodityItemResponse[] = materials.map(
+        (material) => ({
+          id: material.id,
+          commodity_id: material.commodity_id,
+          commodity_name: material.commodity_name,
+          commodity_price: Number(material.commodity_price),
+          commodity_unit: material.commodity_unit,
+          quantity: material.quantity,
+          commodity_cover: material.commodity_cover || [],
+          settlement_amount: Number(material.settlement_amount),
+          is_paid: material.is_paid,
+          is_accepted: material.is_accepted,
+          createdAt: material.createdAt,
+          updatedAt: material.updatedAt,
+        }),
+      );
+
+      // 计算总价（所有 settlement_amount 之和）
+      const total_price = materials.reduce(
+        (sum, material) => sum + Number(material.settlement_amount),
+        0,
+      );
+
+      return {
+        commodity_list,
+        total_price: Number(total_price.toFixed(2)),
+      };
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
@@ -60,12 +90,12 @@ export class MaterialsService {
    * 创建辅材
    * @param createDto 辅材信息
    * @param craftsmanUserId 工匠用户ID（用于验证订单是否属于该工匠）
-   * @returns 创建的辅材
+   * @returns 创建的辅材列表
    */
   async create(
     createDto: CreateMaterialsDto,
     craftsmanUserId: number,
-  ): Promise<Materials> {
+  ): Promise<Materials[]> {
     try {
       // 1. 查找订单
       const order = await this.orderRepository.findOne({
@@ -84,7 +114,19 @@ export class MaterialsService {
         );
       }
 
-      // 3. 验证订单状态（只有已接单的订单才能添加辅材）
+      // 3. 验证订单状态（只有已接单的订单才能添加辅材，已完成和已取消的订单不允许）
+      if (order.order_status === OrderStatus.COMPLETED) {
+        throw new HttpException(
+          '订单已完成，无法添加辅材',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      if (order.order_status === OrderStatus.CANCELLED) {
+        throw new HttpException(
+          '订单已取消，无法添加辅材',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
       if (order.order_status !== OrderStatus.ACCEPTED) {
         throw new HttpException(
           '只有已接单的订单才能添加辅材',
@@ -92,23 +134,27 @@ export class MaterialsService {
         );
       }
 
-      // 4. 创建辅材记录
-      const materials = this.materialsRepository.create({
-        orderId: createDto.orderId,
-        total_price: createDto.total_price,
-        is_paid: false, // 默认未付款
-        total_is_accepted: false, // 默认未验收
-        commodity_list: createDto.commodity_list.map((item) => ({
-          id: item.id,
+      // 4. 批量创建辅材记录
+      const materialsList = createDto.commodity_list.map((item) => {
+        const commodityPrice = parseFloat(item.commodity_price);
+        const quantity = item.quantity;
+        const settlementAmount = commodityPrice * quantity;
+
+        return this.materialsRepository.create({
+          orderId: createDto.orderId,
+          is_paid: false, // 默认未付款
+          is_accepted: false, // 默认未验收
+          commodity_id: item.commodity_id || item.id, // 兼容 id 字段
           commodity_name: item.commodity_name,
-          commodity_price: item.commodity_price,
+          commodity_price: commodityPrice,
           commodity_unit: item.commodity_unit,
-          quantity: item.quantity,
+          quantity: quantity,
           commodity_cover: item.commodity_cover || [],
-        })),
+          settlement_amount: settlementAmount, // 结算结果
+        });
       });
 
-      const saved = await this.materialsRepository.save(materials);
+      const saved = await this.materialsRepository.save(materialsList);
 
       return saved;
     } catch (error) {
@@ -140,7 +186,15 @@ export class MaterialsService {
         throw new HttpException('辅材不存在', HttpStatus.NOT_FOUND);
       }
 
-      // 2. 验证订单是否有接单的工匠
+      // 2. 检查订单是否已取消
+      if (materials.order.order_status === OrderStatus.CANCELLED) {
+        throw new HttpException(
+          '订单已取消，无法进行验收操作',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 3. 验证订单是否有接单的工匠
       if (!materials.order.craftsman_user_id) {
         throw new HttpException(
           '订单尚未接单，无法验收',
@@ -148,7 +202,7 @@ export class MaterialsService {
         );
       }
 
-      // 3. 检查是否已付款
+      // 4. 检查是否已付款
       if (materials.is_paid !== true) {
         throw new HttpException(
           '辅材尚未付款，请联系平台付款',
@@ -156,21 +210,23 @@ export class MaterialsService {
         );
       }
 
-      // 4. 检查是否已经验收过
-      if (materials.total_is_accepted === true) {
+      // 5. 检查是否已经验收过
+      if (materials.is_accepted === true) {
         throw new HttpException(
           '辅材已经验收过，无法重复验收',
           HttpStatus.BAD_REQUEST,
         );
       }
 
-      // 5. 设置验收状态（注意：辅材验收不打款）
-      materials.total_is_accepted = true;
+      // 6. 设置验收状态
+      materials.is_accepted = true;
 
-      // 6. 保存辅材
+      // 7. 保存辅材
       await this.materialsRepository.save(materials);
 
-      // 7. 返回null，全局拦截器会自动包装成标准响应
+      // 8. 注意：平台收支记录已在确认支付时创建，验收时不再重复创建
+
+      // 9. 返回null，全局拦截器会自动包装成标准响应
       return null;
     } catch (error) {
       if (error instanceof HttpException) {
@@ -185,17 +241,15 @@ export class MaterialsService {
   }
 
   /**
-   * 确认辅材支付
-   * @param confirmDto 确认支付信息
+   * 确认辅材支付（通过ID）
+   * @param materialsId 辅材ID
    * @returns null，由全局拦截器包装成标准响应
    */
-  async confirmPayment(
-    confirmDto: ConfirmMaterialsPaymentDto,
-  ): Promise<null> {
+  async confirmPaymentById(materialsId: number): Promise<null> {
     try {
       // 1. 查找辅材
       const materials = await this.materialsRepository.findOne({
-        where: { id: confirmDto.materialsId },
+        where: { id: materialsId },
         relations: ['order'],
       });
 
@@ -203,7 +257,15 @@ export class MaterialsService {
         throw new HttpException('辅材不存在', HttpStatus.NOT_FOUND);
       }
 
-      // 2. 检查是否已经付款
+      // 2. 检查订单是否已取消
+      if (materials.order.order_status === OrderStatus.CANCELLED) {
+        throw new HttpException(
+          '订单已取消，无法进行支付操作',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 3. 检查是否已经付款
       if (materials.is_paid === true) {
         throw new HttpException(
           '辅材已经付款，无法重复支付',
@@ -211,25 +273,26 @@ export class MaterialsService {
         );
       }
 
-      // 3. 设置付款状态
+      // 4. 设置付款状态
       materials.is_paid = true;
 
-      // 4. 保存辅材
+      // 5. 保存辅材
       await this.materialsRepository.save(materials);
 
-      // 5. 创建平台收支记录（收入：辅材费用）
+      // 6. 创建平台收支记录（辅材费用）
       try {
         await this.platformIncomeRecordService.create({
           orderId: materials.orderId,
-          materials_cost: materials.total_price,
-          total_service_fee: 0, // 辅材费用不包含服务费，服务费在工价中
+          order_no: materials.order.order_no,
+          cost_type: CostType.MATERIALS,
+          cost_amount: Number(materials.settlement_amount),
         });
       } catch (recordError) {
-        // 记录错误但不影响支付流程
+        // 记录错误但不影响支付确认流程
         console.error('创建平台收支记录失败:', recordError);
       }
 
-      // 6. 返回null，全局拦截器会自动包装成标准响应
+      // 7. 返回null，全局拦截器会自动包装成标准响应
       return null;
     } catch (error) {
       if (error instanceof HttpException) {
@@ -242,4 +305,5 @@ export class MaterialsService {
       );
     }
   }
+
 }

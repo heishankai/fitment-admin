@@ -101,4 +101,11 @@ export class UpdateCaseQueryDto {
   @IsOptional()
   @IsArray({ message: '卫生间图片必须是数组' })
   bathroom_image?: string[];
+
+  /**
+   * 厨房
+   */
+  @IsOptional()
+  @IsArray({ message: '厨房图片必须是数组' })
+  kitchen_image?: string[];
 }

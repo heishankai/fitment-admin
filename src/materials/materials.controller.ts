@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Put,
   Get,
   Body,
   Param,
@@ -13,7 +14,7 @@ import {
 import { MaterialsService } from './materials.service';
 import { CreateMaterialsDto } from './dto/create-materials.dto';
 import { AcceptMaterialsDto } from './dto/accept-materials.dto';
-import { ConfirmMaterialsPaymentDto } from './dto/confirm-payment.dto';
+import { MaterialsResponseDto } from './dto/materials-response.dto';
 import { Materials } from './materials.entity';
 
 @Controller('materials')
@@ -23,12 +24,12 @@ export class MaterialsController {
   /**
    * 根据订单ID查询辅材列表
    * @param orderId 订单ID
-   * @returns 辅材列表
+   * @returns 辅材响应数据（包含商品列表和总价）
    */
   @Get('order/:orderId')
   async findByOrderId(
     @Param('orderId', ParseIntPipe) orderId: number,
-  ): Promise<Materials[]> {
+  ): Promise<MaterialsResponseDto> {
     try {
       return await this.materialsService.findByOrderId(orderId);
     } catch (error) {
@@ -46,13 +47,13 @@ export class MaterialsController {
    * 创建辅材
    * @param request 请求对象（包含从token解析的用户信息）
    * @param body 辅材信息
-   * @returns 创建的辅材
+   * @returns 创建的辅材列表
    */
   @Post()
   async create(
     @Request() request: any,
     @Body(ValidationPipe) body: CreateMaterialsDto,
-  ): Promise<Materials> {
+  ): Promise<Materials[]> {
     try {
       const userId = request.user?.userid || request.user?.userId;
       if (!userId) {
@@ -88,16 +89,16 @@ export class MaterialsController {
   }
 
   /**
-   * 确认辅材支付
-   * @param body 确认支付信息
+   * 确认单个辅材支付（更新支付状态）
+   * @param id 辅材ID
    * @returns null，由全局拦截器包装成标准响应
    */
-  @Post('confirm-payment')
+  @Put(':id/confirm-payment')
   async confirmPayment(
-    @Body(ValidationPipe) body: ConfirmMaterialsPaymentDto,
+    @Param('id', ParseIntPipe) id: number,
   ): Promise<null> {
     try {
-      return await this.materialsService.confirmPayment(body);
+      return await this.materialsService.confirmPaymentById(id);
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
