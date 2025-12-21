@@ -362,6 +362,12 @@ export class WorkPriceItemService {
         workGroupMap.get(groupId)!.push(item);
       }
 
+      // 查询订单的工匠信息
+      const orderWithCraftsman = await this.orderRepository.findOne({
+        where: { id: orderId },
+        relations: ['craftsman_user'],
+      });
+
       // 转换为数组并计算每个组的统计信息
       const subWorkPriceGroups = Array.from(workGroupMap.entries())
         .sort(([a], [b]) => a - b)
@@ -391,6 +397,9 @@ export class WorkPriceItemService {
             is_paid,
             total_service_fee,
             sub_work_price_groups: items,
+            // 工匠信息（昵称和手机号码）
+            craftsman_nickname: orderWithCraftsman?.craftsman_user?.nickname || null,
+            craftsman_phone: orderWithCraftsman?.craftsman_user?.phone || null,
           };
         });
 
