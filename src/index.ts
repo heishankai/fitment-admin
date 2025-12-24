@@ -27,6 +27,8 @@ export { CraftsmanBankCardModule } from './craftsman-bank-card/craftsman-bank-ca
 export { WithdrawModule } from './withdraw/withdraw.module';
 export { WalletTransactionModule } from './wallet-transaction/wallet-transaction.module';
 export { HomeModule } from './home/home.module';
+export { IndependentPageConfigModule } from './independent-page-config/independent-page-config.module';
+
 export { ConstructionProgressModule } from './construction-progress/construction-progress.module';
 export { MaterialsModule } from './materials/materials.module';
 export { PlatformIncomeRecordModule } from './platform-income-record/platform-income-record.module';

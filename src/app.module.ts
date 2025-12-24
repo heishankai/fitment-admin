@@ -42,10 +42,13 @@ import {
   MaterialsModule,
   PlatformIncomeRecordModule,
   WorkPriceItemModule,
+  IndependentPageConfigModule,
 } from './index';
 // 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
 import { WstModule } from './wst/wst.module';
+import { OrderAccessFeeModule } from './order-access-fee/order-access-fee.module';
+import { WxPayModule } from './common/wx-pay/wx-pay.module';
 
 /**
  * 应用程序的根模块
@@ -70,6 +73,7 @@ import { WstModule } from './wst/wst.module';
     GeolocationModule, // 地理位置模块
     WechatUserModule, // 微信用户模块
     WechatAddressModule, // 微信地址模块
+    WxPayModule, // 微信支付模块
     CaseQueryModule, // 案例查询模块
     CityModule, // 城市模块
     CategoryConfigModule, // 类目配置模块
@@ -93,6 +97,8 @@ import { WstModule } from './wst/wst.module';
     WithdrawModule, // 提现申请审核模块
     WalletTransactionModule, // 账户明细模块
     HomeModule, // 首页统计模块
+    IndependentPageConfigModule, // 独立页面配置模块
+    OrderAccessFeeModule, // 下单准入模块
     ConstructionProgressModule, // 施工进度模块
     MaterialsModule, // 辅材模块
     PlatformIncomeRecordModule, // 平台收支记录模块
