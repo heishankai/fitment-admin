@@ -31,3 +31,4 @@ export { ConstructionProgressModule } from './construction-progress/construction
 export { MaterialsModule } from './materials/materials.module';
 export { PlatformIncomeRecordModule } from './platform-income-record/platform-income-record.module';
 export { WorkPriceItemModule } from './work-price-item/work-price-item.module';
+export { GetPriceModule } from './get-price/get-price.module';

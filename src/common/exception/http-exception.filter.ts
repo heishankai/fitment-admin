@@ -22,10 +22,19 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const status = exception.getStatus();
 
     const errorMessage = exception.getResponse();
-    const message =
-      typeof errorMessage === 'string'
-        ? errorMessage
-        : (errorMessage as any)?.message || '接口错误，请刷新稍后重试';
+    let message: string;
+
+    if (typeof errorMessage === 'string') {
+      message = errorMessage;
+    } else {
+      const errorObj = errorMessage as any;
+      // 处理验证错误：如果 message 是数组，转换为字符串
+      if (Array.isArray(errorObj?.message)) {
+        message = errorObj.message.join('; ');
+      } else {
+        message = errorObj?.message || '接口错误，请刷新稍后重试';
+      }
+    }
 
     const errorResponse = ApiResponseDto.error(status, message);
 

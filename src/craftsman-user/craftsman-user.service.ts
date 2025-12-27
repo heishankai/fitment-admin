@@ -145,7 +145,8 @@ export class CraftsmanUserService {
           user.avatar ||
           'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',
         isVerified: user.isVerified || false,
-        isSkillVerified: user.isSkillVerified || false,
+        // isSkillVerified 动态返回：只有当用户真正通过认证时才为 true
+        isSkillVerified: user.isSkillVerified === true,
         isHomePageVerified: user.isHomePageVerified || false,
         skillInfo: skillInfo || null,
         latitude: user.latitude || null,
@@ -253,8 +254,10 @@ export class CraftsmanUserService {
       );
 
       // 为每个用户添加 isHomePageVerified 和技能信息
+      // isSkillVerified 动态返回：只有当用户真正通过认证时才为 true
       const dataWithSkillInfo = users.map((user) => ({
         ...user,
+        isSkillVerified: user.isSkillVerified === true,
         isHomePageVerified: user.isHomePageVerified || false,
         skillInfo: skillInfoMap.get(user.id) || null,
       }));
@@ -328,8 +331,10 @@ export class CraftsmanUserService {
       );
 
       // 为每个用户添加 isHomePageVerified 和技能信息
+      // isSkillVerified 动态返回：只有当用户真正通过认证时才为 true
       const dataWithSkillInfo = data.map((user) => ({
         ...user,
+        isSkillVerified: user.isSkillVerified === true,
         isHomePageVerified: user.isHomePageVerified || false,
         skillInfo: skillInfoMap.get(user.id) || null,
       }));
@@ -381,6 +386,8 @@ export class CraftsmanUserService {
 
     return {
       ...user,
+      // isSkillVerified 动态返回：只有当用户真正通过认证时才为 true
+      isSkillVerified: user.isSkillVerified === true,
       isHomePageVerified: user.isHomePageVerified || false,
       skillInfo: skillInfo || null,
     };

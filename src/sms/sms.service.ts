@@ -205,4 +205,75 @@ export class SmsService {
       console.log(`清理了 ${cleanedCount} 个过期验证码`);
     }
   }
+
+  /**
+   * 发送订单通知短信
+   * @param phoneNumber 手机号码
+   * @param orderNo 订单号
+   * @param workKindName 工种名称
+   * @returns 发送结果
+   */
+  async sendOrderNotification(
+    phoneNumber: string,
+    orderNo: string,
+    workKindName: string,
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      // 验证手机号格式
+      if (!this.isValidPhoneNumber(phoneNumber)) {
+        console.warn(`订单通知短信发送失败: 手机号格式不正确 ${phoneNumber}`);
+        return {
+          success: false,
+          message: '手机号格式不正确',
+        };
+      }
+
+      // 构建发送短信请求
+      // 使用订单通知模板 SMS_499225904
+      const sendSmsRequest = new $Dysmsapi20170525.SendSmsRequest({
+        phoneNumbers: phoneNumber,
+        signName: SMS_CONFIG.signName,
+        templateCode: SMS_CONFIG.orderNotificationTemplateCode || SMS_CONFIG.templateCode,
+        templateParam: JSON.stringify({
+          // 订单通知模板参数，根据实际模板配置调整
+          // 如果模板支持中文内容，可以直接使用 "您有新的订单。"
+          message: '您有新的订单。', // 根据订单通知模板的实际参数名调整
+        }),
+      });
+
+      // 发送短信
+      const response = await this.client.sendSms(sendSmsRequest);
+
+      // 检查响应
+      if (!response.body) {
+        console.error(`订单通知短信发送失败: 响应数据为空，手机号: ${phoneNumber}`);
+        return {
+          success: false,
+          message: '发送失败: 响应数据为空',
+        };
+      }
+
+      if (response.body.code === 'OK') {
+        console.log(`订单通知短信发送成功: 手机号 ${phoneNumber}, 订单号 ${orderNo}`);
+        return {
+          success: true,
+          message: '订单通知发送成功',
+        };
+      } else {
+        console.error(
+          `订单通知短信发送失败: ${response.body.message || '未知错误'}，手机号: ${phoneNumber}`,
+        );
+        return {
+          success: false,
+          message: `发送失败: ${response.body.message || '未知错误'}`,
+        };
+      }
+    } catch (error) {
+      console.error(`订单通知短信发送异常: 手机号 ${phoneNumber}`, error);
+      return {
+        success: false,
+        message: '订单通知发送失败，请稍后重试',
+      };
+    }
+  }
 }

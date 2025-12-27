@@ -1,10 +1,10 @@
-import { IsOptional, IsString, IsNumber, Min, Max } from 'class-validator';
+import { IsOptional, IsString, IsNumber, Min, Max, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
- * 分页查询首页审核记录DTO
+ * 分页查询获取报价DTO
  */
-export class QueryHomePageAuditDto {
+export class QueryGetPriceDto {
   /**
    * 页码，从1开始
    */
@@ -23,17 +23,25 @@ export class QueryHomePageAuditDto {
   pageSize: number;
 
   /**
-   * 用户昵称（模糊匹配）
+   * 城市（模糊匹配 location 字段）
    */
   @IsOptional()
-  @IsString({ message: '用户昵称必须是字符串' })
-  nickname?: string;
+  @IsString({ message: '城市必须是字符串' })
+  city?: string;
 
   /**
-   * 手机号（模糊匹配）
+   * 手机号（精确匹配）
    */
   @IsOptional()
   @IsString({ message: '手机号必须是字符串' })
   phone?: string;
+
+  /**
+   * 房屋类型（精确匹配，new 或 old）
+   */
+  @IsOptional()
+  @IsString({ message: '房屋类型必须是字符串' })
+  @IsIn(['new', 'old'], { message: '房屋类型必须是 new 或 old' })
+  houseType?: string;
 }
 

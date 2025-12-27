@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Like } from 'typeorm';
 import { HomePageAudit } from './home-page-audit.entity';
 import { CraftsmanUser } from '../craftsman-user/craftsman-user.entity';
 import { CreateHomePageAuditDto } from './dto/create-home-page-audit.dto';
@@ -20,7 +20,7 @@ export class HomePageAuditService {
 
   /**
    * 分页查询首页审核记录
-   * @param queryDto 查询参数 {pageIndex, pageSize, nickname}
+   * @param queryDto 查询参数 {pageIndex, pageSize, nickname, phone}
    * @returns 分页结果
    */
   async getHomePageAuditByPage(
@@ -28,17 +28,57 @@ export class HomePageAuditService {
   ): Promise<any> {
     try {
       // 获取参数
-      const { pageIndex = 1, pageSize = 10, nickname = '' } = queryDto;
+      const {
+        pageIndex = 1,
+        pageSize = 10,
+        nickname = '',
+        phone,
+      } = queryDto;
 
-      // 创建查询构建器，关联用户表
-      const query = this.homePageAuditRepository
-        .createQueryBuilder('home_page_audit')
-        .leftJoin('craftsman_user', 'user', 'user.id = home_page_audit.userId');
+      // 如果提供了昵称或手机号，需要先查询符合条件的用户ID
+      let filteredUserIds: number[] | null = null;
+      const hasNickname = nickname && nickname.trim();
+      const hasPhone = phone && phone.trim();
+      if (hasNickname || hasPhone) {
+        // 构建查询条件
+        const whereConditions: any = {};
+        if (hasNickname) {
+          whereConditions.nickname = Like(`%${nickname.trim()}%`);
+        }
+        if (hasPhone) {
+          // 手机号使用精确匹配
+          whereConditions.phone = phone.trim();
+        }
 
-      // 添加筛选条件：根据用户昵称模糊查询
-      if (nickname) {
-        query.andWhere('user.nickname LIKE :nickname', {
-          nickname: `%${nickname}%`,
+        const matchedUsers = await this.craftsmanUserRepository.find({
+          where: whereConditions,
+          select: ['id'],
+        });
+        filteredUserIds = matchedUsers.map((user) => user.id);
+
+        // 如果没有匹配的用户，直接返回空结果
+        if (filteredUserIds.length === 0) {
+          return {
+            success: true,
+            data: [],
+            code: 200,
+            message: null,
+            pageIndex,
+            pageSize,
+            total: 0,
+            pageTotal: 0,
+          };
+        }
+      }
+
+      // 创建查询构建器
+      const query =
+        this.homePageAuditRepository.createQueryBuilder('home_page_audit');
+
+      // 如果提供了昵称或手机号，添加用户ID筛选条件
+      if (filteredUserIds && filteredUserIds.length > 0) {
+        query.andWhere('home_page_audit.userId IN (:...userIds)', {
+          userIds: filteredUserIds,
         });
       }
 
@@ -57,33 +97,36 @@ export class HomePageAuditService {
       // 获取所有唯一的 userId
       const userIds = [...new Set(data.map((item) => item.userId))];
 
-      // 批量查询用户信息（包括昵称和审核状态）
+      // 批量查询用户信息（包括昵称、手机号和审核状态）
       const users = await this.craftsmanUserRepository.find({
         where: userIds.map((id) => ({ id })),
-        select: ['id', 'nickname', 'isHomePageVerified'],
+        select: ['id', 'nickname', 'phone', 'isHomePageVerified'],
       });
 
-      // 创建 userId -> user 的映射
-      const userMap = new Map(
+      // 创建 userId -> userInfo 的映射
+      const userInfoMap = new Map(
         users.map((user) => [
           user.id,
           {
-            nickname: user.nickname || '叮当优+师傅',
-            isHomePageVerified: user.isHomePageVerified || false,
+            isHomePageVerified: user.isHomePageVerified === true,
+            nickname: user.nickname || '',
+            phone: user.phone || '',
           },
         ]),
       );
 
-      // 为每条记录添加用户昵称和审核状态
+      // 为每条记录添加用户信息
       const dataWithVerified = data.map((item) => {
-        const userInfo = userMap.get(item.userId) || {
-          nickname: '未知用户',
+        const userInfo = userInfoMap.get(item.userId) || {
           isHomePageVerified: false,
+          nickname: '',
+          phone: '',
         };
         return {
           ...item,
-          nickname: userInfo.nickname,
           isHomePageVerified: userInfo.isHomePageVerified,
+          nickname: userInfo.nickname,
+          phone: userInfo.phone,
         };
       });
 
@@ -114,7 +157,7 @@ export class HomePageAuditService {
   }
 
   /**
-   * 创建首页审核记录
+   * 创建首页审核记录（支持重新提交，已通过认证的用户再次提交会将状态设为 false）
    * @param userId 用户ID（从token中解析）
    * @param createHomePageAuditDto 创建首页审核DTO
    * @returns null，由全局拦截器包装成标准响应
@@ -129,11 +172,41 @@ export class HomePageAuditService {
         where: { userId },
       });
 
-      if (existing) {
-        throw new BadRequestException('已存在首页审核记录，审核中.......');
+      // 检查用户的认证状态
+      const user = await this.craftsmanUserRepository.findOne({
+        where: { id: userId },
+        select: ['id', 'isHomePageVerified'],
+      });
+
+      if (!user) {
+        throw new BadRequestException('用户不存在');
       }
 
-      // 创建新的首页审核记录，包含userId
+      // 如果已有记录，允许更新现有记录（重新提交）
+      if (existing) {
+        // 如果用户已通过认证，再次提交时将认证状态设置为 false（需要重新审核）
+        if (user.isHomePageVerified === true) {
+          await this.craftsmanUserRepository.update(userId, {
+            isHomePageVerified: false,
+          });
+        }
+
+        // 只更新 HomePageAudit 实体中存在的字段
+        const updateData: Partial<HomePageAudit> = {};
+        if (createHomePageAuditDto.intro !== undefined) {
+          updateData.intro = createHomePageAuditDto.intro;
+        }
+        if (createHomePageAuditDto.awards !== undefined) {
+          updateData.awards = createHomePageAuditDto.awards;
+        }
+        if (createHomePageAuditDto.awards_image !== undefined) {
+          updateData.awards_image = createHomePageAuditDto.awards_image;
+        }
+        await this.homePageAuditRepository.update(existing.id, updateData);
+        return null;
+      }
+
+      // 如果没有记录，创建新的首页审核记录
       const homePageAudit = this.homePageAuditRepository.create({
         ...createHomePageAuditDto,
         userId,
@@ -206,9 +279,10 @@ export class HomePageAuditService {
     }
 
     // 返回包含用户首页审核状态的数据
+    // isHomePageVerified 动态返回：只有当用户真正通过认证时才为 true
     return {
       ...homePageAudit,
-      isHomePageVerified: user?.isHomePageVerified || false,
+      isHomePageVerified: user?.isHomePageVerified === true,
     };
   }
 
@@ -315,6 +389,54 @@ export class HomePageAuditService {
         throw error;
       }
       throw new BadRequestException('审核通过操作失败: ' + error.message);
+    }
+  }
+
+  /**
+   * 审核不通过，更新用户的 isHomePageVerified 状态为 false
+   * @param userId 用户ID
+   * @param reason 拒绝原因（可选）
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  async rejectVerification(
+    userId: number,
+    reason?: string,
+  ): Promise<null> {
+    try {
+      // 检查用户是否存在
+      const user = await this.craftsmanUserRepository.findOne({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        throw new BadRequestException('用户不存在');
+      }
+
+      // 更新用户的 isHomePageVerified 状态为 false
+      await this.craftsmanUserRepository.update(userId, {
+        isHomePageVerified: false,
+      });
+
+      // 创建系统通知
+      const notificationContent = reason
+        ? `很抱歉，您的个人主页信息未通过审核。原因：${reason}`
+        : '很抱歉，您的个人主页信息未通过审核，请重新提交审核材料。';
+
+      await this.notificationService.create({
+        userId,
+        notification_type: 'home-page-audit',
+        title: '个人主页审核不通过',
+        content: notificationContent,
+        is_read: false,
+      });
+
+      // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
+      return null;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('审核不通过操作失败: ' + error.message);
     }
   }
 }

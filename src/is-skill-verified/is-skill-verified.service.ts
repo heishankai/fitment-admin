@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Like } from 'typeorm';
 import { IsSkillVerified } from './is-skill-verified.entity';
 import { CraftsmanUser } from '../craftsman-user/craftsman-user.entity';
 import { CreateIsSkillVerifiedDto } from './dto/create-is-skill-verified.dto';
@@ -20,7 +20,7 @@ export class IsSkillVerifiedService {
 
   /**
    * 分页查询技能认证记录
-   * @param queryDto 查询参数 {pageIndex, pageSize, workKindId}
+   * @param queryDto 查询参数 {pageIndex, pageSize, workKindId, nickname, phone}
    * @returns 分页结果
    */
   async getIsSkillVerifiedByPage(
@@ -28,7 +28,49 @@ export class IsSkillVerifiedService {
   ): Promise<any> {
     try {
       // 获取参数
-      const { pageIndex = 1, pageSize = 10, workKindId } = queryDto;
+      const {
+        pageIndex = 1,
+        pageSize = 10,
+        workKindId,
+        nickname,
+        phone,
+      } = queryDto;
+
+      // 如果提供了昵称或手机号，需要先查询符合条件的用户ID
+      let filteredUserIds: number[] | null = null;
+      const hasNickname = nickname && nickname.trim();
+      const hasPhone = phone && phone.trim();
+      if (hasNickname || hasPhone) {
+        // 构建查询条件
+        const whereConditions: any = {};
+        if (hasNickname) {
+          whereConditions.nickname = Like(`%${nickname.trim()}%`);
+        }
+        if (hasPhone) {
+          // 手机号使用精确匹配
+          whereConditions.phone = phone.trim();
+        }
+        
+        const matchedUsers = await this.craftsmanUserRepository.find({
+          where: whereConditions,
+          select: ['id'],
+        });
+        filteredUserIds = matchedUsers.map((user) => user.id);
+        
+        // 如果没有匹配的用户，直接返回空结果
+        if (filteredUserIds.length === 0) {
+          return {
+            success: true,
+            data: [],
+            code: 200,
+            message: null,
+            pageIndex,
+            pageSize,
+            total: 0,
+            pageTotal: 0,
+          };
+        }
+      }
 
       // 创建查询构建器
       const query =
@@ -38,6 +80,13 @@ export class IsSkillVerifiedService {
       if (workKindId) {
         query.andWhere('is_skill_verified.workKindId = :workKindId', {
           workKindId,
+        });
+      }
+
+      // 如果提供了昵称或手机号，添加用户ID筛选条件
+      if (filteredUserIds && filteredUserIds.length > 0) {
+        query.andWhere('is_skill_verified.userId IN (:...userIds)', {
+          userIds: filteredUserIds,
         });
       }
 
@@ -56,22 +105,38 @@ export class IsSkillVerifiedService {
       // 获取所有唯一的 userId
       const userIds = [...new Set(data.map((item) => item.userId))];
 
-      // 批量查询用户的技能认证状态
+      // 批量查询用户的技能认证状态、昵称和手机号
       const users = await this.craftsmanUserRepository.find({
         where: userIds.map((id) => ({ id })),
-        select: ['id', 'isSkillVerified'],
+        select: ['id', 'isSkillVerified', 'nickname', 'phone'],
       });
 
-      // 创建 userId -> isSkillVerified 的映射
-      const userSkillVerifiedMap = new Map(
-        users.map((user) => [user.id, user.isSkillVerified || false]),
+      // 创建 userId -> userInfo 的映射
+      const userInfoMap = new Map(
+        users.map((user) => [
+          user.id,
+          {
+            isSkillVerified: user.isSkillVerified || false,
+            nickname: user.nickname || '',
+            phone: user.phone || '',
+          },
+        ]),
       );
 
-      // 为每条记录添加 isSkillVerified 字段
-      const dataWithVerified = data.map((item) => ({
-        ...item,
-        isSkillVerified: userSkillVerifiedMap.get(item.userId) || false,
-      }));
+      // 为每条记录添加用户信息
+      const dataWithVerified = data.map((item) => {
+        const userInfo = userInfoMap.get(item.userId) || {
+          isSkillVerified: false,
+          nickname: '',
+          phone: '',
+        };
+        return {
+          ...item,
+          isSkillVerified: userInfo.isSkillVerified,
+          nickname: userInfo.nickname,
+          phone: userInfo.phone,
+        };
+      });
 
       // 返回结果（包含分页信息的完整格式）
       return {
@@ -100,7 +165,7 @@ export class IsSkillVerifiedService {
   }
 
   /**
-   * 创建技能认证记录
+   * 创建技能认证记录（支持重新提交，已通过认证的用户再次提交会将状态设为 false）
    * @param userId 用户ID（从token中解析）
    * @param createIsSkillVerifiedDto 创建技能认证DTO
    * @returns null，由全局拦截器包装成标准响应
@@ -115,11 +180,44 @@ export class IsSkillVerifiedService {
         where: { userId },
       });
 
-      if (existing) {
-        throw new BadRequestException('已存在技能认证记录，审核中.......');
+      // 检查用户的认证状态
+      const user = await this.craftsmanUserRepository.findOne({
+        where: { id: userId },
+        select: ['id', 'isSkillVerified'],
+      });
+
+      if (!user) {
+        throw new BadRequestException('用户不存在');
       }
 
-      // 创建新的技能认证记录，包含userId
+      // 如果已有记录，允许更新现有记录（重新提交）
+      if (existing) {
+        // 如果用户已通过认证，再次提交时将认证状态设置为 false（需要重新审核）
+        if (user.isSkillVerified === true) {
+          await this.craftsmanUserRepository.update(userId, {
+            isSkillVerified: false,
+          });
+        }
+
+        // 只更新 IsSkillVerified 实体中存在的字段
+        const updateData: Partial<IsSkillVerified> = {};
+        if (createIsSkillVerifiedDto.promise_image !== undefined) {
+          updateData.promise_image = createIsSkillVerifiedDto.promise_image;
+        }
+        if (createIsSkillVerifiedDto.operation_video !== undefined) {
+          updateData.operation_video = createIsSkillVerifiedDto.operation_video;
+        }
+        if (createIsSkillVerifiedDto.workKindId !== undefined) {
+          updateData.workKindId = createIsSkillVerifiedDto.workKindId;
+        }
+        if (createIsSkillVerifiedDto.workKindName !== undefined) {
+          updateData.workKindName = createIsSkillVerifiedDto.workKindName;
+        }
+        await this.isSkillVerifiedRepository.update(existing.id, updateData);
+        return null;
+      }
+
+      // 如果没有记录，创建新的技能认证记录
       const isSkillVerified = this.isSkillVerifiedRepository.create({
         ...createIsSkillVerifiedDto,
         userId,
@@ -301,6 +399,54 @@ export class IsSkillVerifiedService {
         throw error;
       }
       throw new BadRequestException('认证通过操作失败: ' + error.message);
+    }
+  }
+
+  /**
+   * 认证不通过，更新用户的 isSkillVerified 状态为 false
+   * @param userId 用户ID
+   * @param reason 拒绝原因（可选）
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  async rejectVerification(
+    userId: number,
+    reason?: string,
+  ): Promise<null> {
+    try {
+      // 检查用户是否存在
+      const user = await this.craftsmanUserRepository.findOne({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        throw new BadRequestException('用户不存在');
+      }
+
+      // 更新用户的 isSkillVerified 状态为 false
+      await this.craftsmanUserRepository.update(userId, {
+        isSkillVerified: false,
+      });
+
+      // 创建系统通知
+      const notificationContent = reason
+        ? `很抱歉，您的技能认证未通过审核。原因：${reason}`
+        : '很抱歉，您的技能认证未通过审核，请重新提交认证材料。';
+
+      await this.notificationService.create({
+        userId,
+        notification_type: 'is-skill-verified',
+        title: '技能认证审核不通过',
+        content: notificationContent,
+        is_read: false,
+      });
+
+      // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
+      return null;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('认证不通过操作失败: ' + error.message);
     }
   }
 }

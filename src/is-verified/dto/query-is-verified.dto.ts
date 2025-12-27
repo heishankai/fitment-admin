@@ -28,5 +28,19 @@ export class QueryIsVerifiedDto {
   @IsOptional()
   @IsString({ message: '证件名称必须是字符串' })
   card_name?: string;
+
+  /**
+   * 用户昵称（模糊匹配）
+   */
+  @IsOptional()
+  @IsString({ message: '用户昵称必须是字符串' })
+  nickname?: string;
+
+  /**
+   * 手机号（模糊匹配）
+   */
+  @IsOptional()
+  @IsString({ message: '手机号必须是字符串' })
+  phone?: string;
 }
 

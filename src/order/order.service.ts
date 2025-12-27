@@ -21,6 +21,7 @@ import { WalletTransactionService } from '../wallet-transaction/wallet-transacti
 import { WalletTransactionType } from '../wallet-transaction/wallet-transaction.entity';
 import { PlatformIncomeRecordService } from '../platform-income-record/platform-income-record.service';
 import { CostType } from '../platform-income-record/platform-income-record.entity';
+import { SmsService } from '../sms/sms.service';
 
 /**
  * 计算两点之间的距离（公里）
@@ -197,6 +198,7 @@ export class OrderService {
     private readonly walletService: WalletService,
     private readonly walletTransactionService: WalletTransactionService,
     private readonly platformIncomeRecordService: PlatformIncomeRecordService,
+    private readonly smsService: SmsService,
   ) {}
 
   /**
@@ -294,7 +296,19 @@ export class OrderService {
         createOrderDto.work_kind_id,
       );
 
-      // 4. 加载完整的订单信息（包含用户信息）
+      // 4. 给匹配到的工匠发送短信通知
+      if (matchedCraftsmen.length > 0) {
+        // 异步发送短信通知，不阻塞订单创建流程
+        this.sendOrderNotificationsToCraftsmen(
+          matchedCraftsmen,
+          orderNo,
+          createOrderDto.work_kind_name,
+        ).catch((error) => {
+          console.error('发送订单通知短信失败:', error);
+        });
+      }
+
+      // 5. 加载完整的订单信息（包含用户信息）
       const fullOrder = await this.orderRepository.findOne({
         where: { id: savedOrder.id },
         relations: ['wechat_user'],
@@ -425,6 +439,57 @@ export class OrderService {
       console.error('匹配工匠失败:', error);
       return [];
     }
+  }
+
+  /**
+   * 给匹配到的工匠发送订单通知短信
+   * @param matchedCraftsmen 匹配到的工匠列表
+   * @param orderNo 订单号
+   * @param workKindName 工种名称
+   */
+  private async sendOrderNotificationsToCraftsmen(
+    matchedCraftsmen: Array<{ craftsman: CraftsmanUser; distance: number }>,
+    orderNo: string,
+    workKindName: string,
+  ): Promise<void> {
+    console.log(
+      `开始给 ${matchedCraftsmen.length} 个匹配的工匠发送订单通知短信，订单号: ${orderNo}`,
+    );
+
+    // 并发发送短信通知，但不等待所有完成
+    const sendPromises = matchedCraftsmen.map(async ({ craftsman }) => {
+      if (craftsman.phone) {
+        try {
+          const result = await this.smsService.sendOrderNotification(
+            craftsman.phone,
+            orderNo,
+            workKindName,
+          );
+          if (result.success) {
+            console.log(
+              `✅ 订单通知短信发送成功: 工匠 ${craftsman.id} (${craftsman.phone}), 订单号 ${orderNo}`,
+            );
+          } else {
+            console.warn(
+              `⚠️ 订单通知短信发送失败: 工匠 ${craftsman.id} (${craftsman.phone}), 原因: ${result.message}`,
+            );
+          }
+        } catch (error) {
+          console.error(
+            `❌ 订单通知短信发送异常: 工匠 ${craftsman.id} (${craftsman.phone})`,
+            error,
+          );
+        }
+      } else {
+        console.warn(
+          `⚠️ 工匠 ${craftsman.id} 没有手机号，无法发送订单通知短信`,
+        );
+      }
+    });
+
+    // 等待所有短信发送完成（但不阻塞主流程）
+    await Promise.allSettled(sendPromises);
+    console.log(`订单通知短信发送完成，订单号: ${orderNo}`);
   }
 
   /**
@@ -832,14 +897,12 @@ export class OrderService {
       throw new HttpException('工匠不存在', HttpStatus.NOT_FOUND);
     }
 
-    // 2. 获取已分配给该工匠的订单（通过 craftsman_user_id）
+    // 2. 获取所有待接单的订单（order_status = 1），排除已分配给该工匠的订单
     const assignedOrders = await this.orderRepository.find({
       where: { craftsman_user_id: craftsmanUserId },
-      relations: ['wechat_user', 'craftsman_user'],
-      order: { createdAt: 'DESC' },
+      select: ['id'],
     });
 
-    // 3. 获取所有待接单的订单（order_status = 1），排除已分配的订单
     const assignedOrderIds = assignedOrders.map((o) => o.id);
     let pendingOrdersQuery = this.orderRepository
       .createQueryBuilder('order')
@@ -856,7 +919,7 @@ export class OrderService {
 
     const pendingOrders = await pendingOrdersQuery.getMany();
 
-    // 4. 过滤出匹配到当前工匠的待接单订单
+    // 3. 过滤出匹配到当前工匠的待接单订单
     const matchedPendingOrders: Order[] = [];
 
     // 如果工匠没有位置信息，无法匹配
@@ -917,14 +980,12 @@ export class OrderService {
       console.log(`⚠️  工匠 ${craftsmanUserId} 没有位置信息，无法匹配订单`);
     }
 
-    // 5. 合并已分配的订单和匹配到的待接单订单
-    const allOrders = [...assignedOrders, ...matchedPendingOrders];
-
+    // 4. 只返回待接单的订单
     console.log(
-      `工匠 ${craftsmanUserId} 的订单列表: 已分配订单 ${assignedOrders.length} 个，匹配到的待接单订单 ${matchedPendingOrders.length} 个`,
+      `工匠 ${craftsmanUserId} 的待接单订单列表: 匹配到的待接单订单 ${matchedPendingOrders.length} 个`,
     );
 
-    return allOrders.map((order) => this.normalizeOrderWorkPrices(order));
+    return matchedPendingOrders.map((order) => this.normalizeOrderWorkPrices(order));
   }
 
   /**
@@ -1266,11 +1327,61 @@ export class OrderService {
         });
       }
 
-      // 添加筛选条件：订单号（精确匹配）
+      // 添加筛选条件：订单号（精确匹配，并查询所有相关订单）
       if (order_no) {
-        query.andWhere('order.order_no = :order_no', {
-          order_no,
+        // 先查找匹配订单编号的订单
+        const matchedOrders = await this.orderRepository.find({
+          where: { order_no },
+          select: ['id', 'parent_order_id'],
         });
+
+        if (matchedOrders.length > 0) {
+          // 收集所有相关的订单ID
+          const relatedOrderIds = new Set<number>();
+          
+          for (const order of matchedOrders) {
+            relatedOrderIds.add(order.id);
+            
+            // 如果订单有父订单，添加父订单ID
+            if (order.parent_order_id) {
+              relatedOrderIds.add(order.parent_order_id);
+            }
+          }
+
+          // 查找所有父订单的子订单
+          const parentOrderIds = matchedOrders
+            .filter((o) => !o.parent_order_id)
+            .map((o) => o.id);
+          
+          if (parentOrderIds.length > 0) {
+            const childOrders = await this.orderRepository.find({
+              where: { parent_order_id: In(parentOrderIds) },
+              select: ['id'],
+            });
+            childOrders.forEach((child) => relatedOrderIds.add(child.id));
+          }
+
+          // 查找所有子订单的父订单的其他子订单
+          const childOrderIds = matchedOrders
+            .filter((o) => o.parent_order_id)
+            .map((o) => o.parent_order_id);
+          
+          if (childOrderIds.length > 0) {
+            const siblingOrders = await this.orderRepository.find({
+              where: { parent_order_id: In(childOrderIds) },
+              select: ['id'],
+            });
+            siblingOrders.forEach((sibling) => relatedOrderIds.add(sibling.id));
+          }
+
+          // 使用 IN 查询所有相关订单
+          query.andWhere('order.id IN (:...relatedOrderIds)', {
+            relatedOrderIds: Array.from(relatedOrderIds),
+          });
+        } else {
+          // 如果没有匹配的订单，返回空结果
+          query.andWhere('1 = 0');
+        }
       }
 
       // 添加筛选条件：订单状态（精确匹配）

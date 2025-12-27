@@ -2,9 +2,9 @@ import { IsOptional, IsString, IsNumber, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
- * 分页查询技能认证记录DTO
+ * 分页查询微信用户DTO
  */
-export class QueryIsSkillVerifiedDto {
+export class QueryWechatUserDto {
   /**
    * 页码，从1开始
    */
@@ -23,24 +23,24 @@ export class QueryIsSkillVerifiedDto {
   pageSize: number;
 
   /**
-   * 工种ID（精确匹配）
-   */
-  @IsOptional()
-  @IsString({ message: '工种ID必须是字符串' })
-  workKindId?: string;
-
-  /**
-   * 用户昵称（模糊匹配）
-   */
-  @IsOptional()
-  @IsString({ message: '用户昵称必须是字符串' })
-  nickname?: string;
-
-  /**
    * 手机号（模糊匹配）
    */
   @IsOptional()
   @IsString({ message: '手机号必须是字符串' })
   phone?: string;
+
+  /**
+   * 昵称（模糊匹配）
+   */
+  @IsOptional()
+  @IsString({ message: '昵称必须是字符串' })
+  nickname?: string;
+
+  /**
+   * 城市（模糊匹配）
+   */
+  @IsOptional()
+  @IsString({ message: '城市必须是字符串' })
+  city?: string;
 }
 

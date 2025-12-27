@@ -131,6 +131,23 @@ export class IsSkillVerifiedController {
   }
 
   /**
+   * 认证不通过，更新用户的 isSkillVerified 状态为 false，并删除技能认证记录
+   * @param userId 用户ID
+   * @param body 拒绝原因（可选）
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  @Put('reject/:userId')
+  async rejectVerification(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Body() body?: { reason?: string },
+  ): Promise<null> {
+    return await this.isSkillVerifiedService.rejectVerification(
+      userId,
+      body?.reason,
+    );
+  }
+
+  /**
    * 根据用户ID更新技能认证记录
    * @param userId 用户ID
    * @param updateDto 更新数据

@@ -7,11 +7,13 @@ import {
   Body,
   Param,
   ParseIntPipe,
+  ValidationPipe,
 } from '@nestjs/common';
 import { WechatUserService } from './wechat-user.service';
 import { Public } from '../auth/public.decorator';
 import { GetPhoneDto } from './dto/get-phone.dto';
 import { UpdateWechatUserDto } from './dto/update-wechat-user.dto';
+import { QueryWechatUserDto } from './dto/query-wechat-user.dto';
 
 @Public()
 @Controller('wechat/wechat-user')
@@ -53,5 +55,15 @@ export class WechatUserController {
     @Body() body: UpdateWechatUserDto,
   ) {
     return this.wechatUserService.updateWechatUser(id, body);
+  }
+
+  /**
+   * 分页查询微信用户
+   * @param body 查询参数
+   * @returns 分页结果
+   */
+  @Post('page')
+  async getWechatUsersByPage(@Body(ValidationPipe) body: QueryWechatUserDto) {
+    return this.wechatUserService.getWechatUsersByPage(body);
   }
 }

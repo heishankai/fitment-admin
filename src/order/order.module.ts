@@ -14,6 +14,7 @@ import { WalletModule } from '../wallet/wallet.module';
 import { WalletTransactionModule } from '../wallet-transaction/wallet-transaction.module';
 import { WorkPriceItemModule } from '../work-price-item/work-price-item.module';
 import { PlatformIncomeRecordModule } from '../platform-income-record/platform-income-record.module';
+import { SmsModule } from '../sms/sms.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { PlatformIncomeRecordModule } from '../platform-income-record/platform-i
     WalletModule,
     WalletTransactionModule,
     PlatformIncomeRecordModule,
+    SmsModule, // 导入短信模块以发送订单通知
   ],
   controllers: [OrderController],
   providers: [OrderService, OrderGateway],

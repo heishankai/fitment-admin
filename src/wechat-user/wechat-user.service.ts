@@ -13,6 +13,8 @@ import {
 // entity
 import { WechatUser } from './wechat-user.entity';
 import { UpdateWechatUserDto } from './dto/update-wechat-user.dto';
+import { QueryWechatUserDto } from './dto/query-wechat-user.dto';
+import { Like } from 'typeorm';
 
 @Injectable()
 export class WechatUserService {
@@ -248,6 +250,73 @@ export class WechatUserService {
         '更新用户信息失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    }
+  }
+
+  /**
+   * 分页查询微信用户
+   * @param queryDto 查询参数
+   * @returns 分页结果
+   */
+  async getWechatUsersByPage(queryDto: QueryWechatUserDto): Promise<any> {
+    try {
+      const {
+        pageIndex = 1,
+        pageSize = 10,
+        phone = '',
+        nickname = '',
+        city = '',
+      } = queryDto;
+
+      // 构建查询条件
+      const where: any = {};
+
+      if (phone && phone.trim()) {
+        where.phone = Like(`%${phone.trim()}%`);
+      }
+
+      if (nickname && nickname.trim()) {
+        where.nickname = Like(`%${nickname.trim()}%`);
+      }
+
+      if (city && city.trim()) {
+        where.city = Like(`%${city.trim()}%`);
+      }
+
+      // 查询总数
+      const total = await this.wechatUserRepository.count({ where });
+
+      // 查询数据（分页）
+      const data = await this.wechatUserRepository.find({
+        where,
+        skip: (pageIndex - 1) * pageSize,
+        take: pageSize,
+        order: { createdAt: 'DESC' },
+      });
+
+      // 返回结果（包含分页信息的完整格式）
+      return {
+        success: true,
+        data,
+        code: 200,
+        message: null,
+        pageIndex,
+        pageSize,
+        total,
+        pageTotal: Math.ceil(total / pageSize),
+      };
+    } catch (error) {
+      console.error('分页查询微信用户错误:', error);
+      return {
+        success: false,
+        data: null,
+        code: 500,
+        message: '分页查询失败: ' + error.message,
+        pageIndex: 1,
+        pageSize: 10,
+        total: 0,
+        pageTotal: 0,
+      };
     }
   }
 
