@@ -165,7 +165,7 @@ export class IsSkillVerifiedService {
   }
 
   /**
-   * 创建技能认证记录（支持重新提交，已通过认证的用户再次提交会将状态设为 false）
+   * 创建技能认证记录（已通过认证的用户不允许再次提交）
    * @param userId 用户ID（从token中解析）
    * @param createIsSkillVerifiedDto 创建技能认证DTO
    * @returns null，由全局拦截器包装成标准响应
@@ -190,15 +190,13 @@ export class IsSkillVerifiedService {
         throw new BadRequestException('用户不存在');
       }
 
+      // 如果用户已通过认证，不允许再次提交
+      if (user.isSkillVerified === true) {
+        throw new BadRequestException('您已通过技能认证，不允许再次提交');
+      }
+
       // 如果已有记录，允许更新现有记录（重新提交）
       if (existing) {
-        // 如果用户已通过认证，再次提交时将认证状态设置为 false（需要重新审核）
-        if (user.isSkillVerified === true) {
-          await this.craftsmanUserRepository.update(userId, {
-            isSkillVerified: false,
-          });
-        }
-
         // 只更新 IsSkillVerified 实体中存在的字段
         const updateData: Partial<IsSkillVerified> = {};
         if (createIsSkillVerifiedDto.promise_image !== undefined) {

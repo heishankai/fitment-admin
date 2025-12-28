@@ -362,11 +362,12 @@ export class OrderService {
         console.log(`工种名称无需解码: ${workKindName}`);
       }
 
-      // 1. 查询所有有位置信息的工匠
+      // 1. 查询所有有位置信息且技能认证通过的工匠
       const craftsmen = await this.craftsmanUserRepository
         .createQueryBuilder('craftsman')
         .where('craftsman.latitude IS NOT NULL')
         .andWhere('craftsman.longitude IS NOT NULL')
+        .andWhere('craftsman.isSkillVerified = :isSkillVerified', { isSkillVerified: true })
         .getMany();
 
       // 2. 查询匹配工种的技能认证（仅通过工种名称匹配）
@@ -390,8 +391,13 @@ export class OrderService {
       }> = [];
 
       for (const craftsman of craftsmen) {
-        // 检查是否有匹配的技能
+        // 检查是否有匹配的技能认证（技能认证记录存在）
         if (!skillUserIds.has(craftsman.id)) {
+          continue;
+        }
+        
+        // 确保技能认证已通过（双重检查，虽然查询时已过滤，但为了安全再加一次）
+        if (craftsman.isSkillVerified !== true) {
           continue;
         }
 
@@ -895,6 +901,18 @@ export class OrderService {
 
     if (!craftsman) {
       throw new HttpException('工匠不存在', HttpStatus.NOT_FOUND);
+    }
+
+    // 检查工匠是否通过技能认证
+    if (craftsman.isSkillVerified !== true) {
+      console.log(`⚠️  工匠 ${craftsmanUserId} 未通过技能认证，不返回匹配的待接单订单`);
+      // 只返回已分配给该工匠的订单，不返回匹配的待接单订单
+      const assignedOrders = await this.orderRepository.find({
+        where: { craftsman_user_id: craftsmanUserId },
+        relations: ['wechat_user', 'craftsman_user'],
+        order: { createdAt: 'DESC' },
+      });
+      return assignedOrders.map((order) => this.normalizeOrderWorkPrices(order));
     }
 
     // 2. 获取所有待接单的订单（order_status = 1），排除已分配给该工匠的订单
