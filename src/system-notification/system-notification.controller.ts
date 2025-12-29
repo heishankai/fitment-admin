@@ -49,6 +49,11 @@ export class SystemNotificationController {
     @Query('isRead') isRead?: string,
   ): Promise<SystemNotification[]> {
     try {
+      // 根据token中的用户类型判断：系统通知仅限工匠用户
+      if (req.user?.type !== 'craftsman') {
+        return [];
+      }
+
       // 从token中获取userId（兼容不同的token格式）
       const userId = req.user?.userId || req.user?.userid;
       if (!userId) {
@@ -80,6 +85,11 @@ export class SystemNotificationController {
   @Get('unread-count')
   async getUnreadCount(@Request() req: any): Promise<{ count: number }> {
     try {
+      // 根据token中的用户类型判断：系统通知仅限工匠用户
+      if (req.user?.type !== 'craftsman') {
+        return { count: 0 };
+      }
+
       // 从token中获取userId（兼容不同的token格式）
       const userId = req.user?.userId || req.user?.userid;
       if (!userId) {
@@ -102,13 +112,36 @@ export class SystemNotificationController {
   /**
    * 标记通知为已读
    * @param notificationId 通知ID
+   * @param req 请求对象，包含用户信息
    * @returns null
    */
   @Put('read/:notificationId')
   async markAsRead(
     @Param('notificationId', ParseIntPipe) notificationId: number,
+    @Request() req: any,
   ): Promise<null> {
-    return await this.notificationService.markAsRead(notificationId);
+    try {
+      // 根据token中的用户类型判断：系统通知仅限工匠用户
+      if (req.user?.type !== 'craftsman') {
+        return null;
+      }
+
+      // 从token中获取userId（兼容不同的token格式）
+      const userId = req.user?.userId || req.user?.userid;
+      if (!userId) {
+        throw new HttpException('未授权', HttpStatus.UNAUTHORIZED);
+      }
+
+      return await this.notificationService.markAsRead(notificationId, userId);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '标记已读失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   /**
@@ -119,6 +152,11 @@ export class SystemNotificationController {
   @Put('read-all')
   async markAllAsRead(@Request() req: any): Promise<null> {
     try {
+      // 根据token中的用户类型判断：系统通知仅限工匠用户
+      if (req.user?.type !== 'craftsman') {
+        return null;
+      }
+
       // 从token中获取userId（兼容不同的token格式）
       const userId = req.user?.userId || req.user?.userid;
       if (!userId) {

@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { WorkPriceItem } from './work-price-item.entity';
 import { Order } from '../order/order.entity';
 import { CreateWorkPriceItemsDto } from './dto/create-work-price-items.dto';
+import { Materials } from '../materials/materials.entity';
+import { MaterialsResponseDto, CommodityItemResponse } from '../materials/dto/materials-response.dto';
 
 @Injectable()
 export class WorkPriceItemService {
@@ -12,6 +14,8 @@ export class WorkPriceItemService {
     private readonly workPriceItemRepository: Repository<WorkPriceItem>,
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
+    @InjectRepository(Materials)
+    private readonly materialsRepository: Repository<Materials>,
   ) {}
 
   /**
@@ -673,6 +677,109 @@ export class WorkPriceItemService {
     } catch (error) {
       console.error('更新订单服务费和上门次数失败:', error);
       // 不抛出异常，避免影响工价创建
+    }
+  }
+
+  /**
+   * 根据工价项ID和工匠ID获取对应工匠创建的辅材料列表
+   * @param workPriceItemId 工价项ID
+   * @param craftsmanId 工匠ID
+   * @returns 辅材响应数据（包含商品列表和总价）
+   */
+  async getMaterialsByWorkPriceItemIdAndCraftsmanId(
+    workPriceItemId: number,
+    craftsmanId: number,
+  ): Promise<MaterialsResponseDto> {
+    try {
+      // 1. 查找工价项
+      const workPriceItem = await this.workPriceItemRepository.findOne({
+        where: { id: workPriceItemId },
+        relations: ['order'],
+      });
+
+      if (!workPriceItem) {
+        throw new HttpException('工价项不存在', HttpStatus.NOT_FOUND);
+      }
+
+      // 2. 验证工价项是否属于该工匠
+      if (workPriceItem.assigned_craftsman_id !== craftsmanId) {
+        throw new HttpException(
+          '无权查看此工价项的辅材',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
+      // 3. 确定要查询的订单ID
+      // 如果工价项所在的订单有 parent_order_id，说明这是父订单（工长订单）
+      // 需要查找对应的工匠订单来查询辅材
+      let targetOrderId = workPriceItem.order_id;
+      
+      if (workPriceItem.order.parent_order_id === null) {
+        // 工价项在父订单（工长订单）中，需要找到对应的工匠订单
+        const craftsmanOrder = await this.orderRepository.findOne({
+          where: {
+            parent_order_id: workPriceItem.order_id,
+            craftsman_user_id: craftsmanId,
+            is_assigned: true,
+          },
+        });
+
+        if (craftsmanOrder) {
+          // 找到了对应的工匠订单，查询工匠订单的辅材
+          targetOrderId = craftsmanOrder.id;
+        } else {
+          // 如果没有找到工匠订单，说明工价项还未分配给工匠，返回空列表
+          return {
+            commodity_list: [],
+            total_price: 0,
+          };
+        }
+      }
+      // 如果工价项已经在工匠订单中（order.parent_order_id 不为 null），直接使用当前订单ID
+
+      // 4. 查询该订单下的所有辅材
+      const materials = await this.materialsRepository.find({
+        where: { orderId: targetOrderId },
+        order: { createdAt: 'DESC' },
+      });
+
+      // 4. 转换为商品列表格式
+      const commodity_list: CommodityItemResponse[] = materials.map(
+        (material) => ({
+          id: material.id,
+          commodity_id: material.commodity_id,
+          commodity_name: material.commodity_name,
+          commodity_price: Number(material.commodity_price),
+          commodity_unit: material.commodity_unit,
+          quantity: material.quantity,
+          commodity_cover: material.commodity_cover || [],
+          settlement_amount: Number(material.settlement_amount),
+          is_paid: material.is_paid,
+          is_accepted: material.is_accepted,
+          createdAt: material.createdAt,
+          updatedAt: material.updatedAt,
+        }),
+      );
+
+      // 5. 计算总价（所有 settlement_amount 之和）
+      const total_price = materials.reduce(
+        (sum, material) => sum + Number(material.settlement_amount),
+        0,
+      );
+
+      return {
+        commodity_list,
+        total_price: Number(total_price.toFixed(2)),
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      console.error('查询辅材失败:', error);
+      throw new HttpException(
+        '查询辅材失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 }

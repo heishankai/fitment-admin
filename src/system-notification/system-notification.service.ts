@@ -32,7 +32,7 @@ export class SystemNotificationService {
 
   /**
    * 获取用户的通知列表
-   * @param userId 用户ID
+   * @param userId 用户ID（工匠用户ID）
    * @param isRead 是否已读（可选，用于筛选）
    * @returns 通知列表
    */
@@ -63,9 +63,10 @@ export class SystemNotificationService {
   /**
    * 标记通知为已读
    * @param notificationId 通知ID
+   * @param userId 用户ID（用于验证通知是否属于该用户）
    * @returns null
    */
-  async markAsRead(notificationId: number): Promise<null> {
+  async markAsRead(notificationId: number, userId?: number): Promise<null> {
     try {
       const notification = await this.notificationRepository.findOne({
         where: { id: notificationId },
@@ -73,6 +74,11 @@ export class SystemNotificationService {
 
       if (!notification) {
         throw new BadRequestException('通知不存在');
+      }
+
+      // 如果提供了userId，验证通知是否属于该用户
+      if (userId !== undefined && notification.userId !== userId) {
+        throw new BadRequestException('无权操作：该通知不属于当前用户');
       }
 
       await this.notificationRepository.update(notificationId, {
@@ -90,7 +96,7 @@ export class SystemNotificationService {
 
   /**
    * 标记用户的所有通知为已读
-   * @param userId 用户ID
+   * @param userId 用户ID（工匠用户ID）
    * @returns null
    */
   async markAllAsRead(userId: number): Promise<null> {
@@ -108,7 +114,7 @@ export class SystemNotificationService {
 
   /**
    * 获取用户未读通知数量
-   * @param userId 用户ID
+   * @param userId 用户ID（工匠用户ID）
    * @returns 未读通知数量
    */
   async getUnreadCount(userId: number): Promise<number> {

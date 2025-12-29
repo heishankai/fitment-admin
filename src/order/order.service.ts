@@ -7,6 +7,7 @@ import { IsSkillVerified } from '../is-skill-verified/is-skill-verified.entity';
 import { WechatUser } from '../wechat-user/wechat-user.entity';
 import { WorkPriceItem } from '../work-price-item/work-price-item.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { CreateOrderAdminDto } from './dto/create-order-admin.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { QueryOrderDto } from './dto/query-order.dto';
 import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
@@ -325,6 +326,120 @@ export class OrderService {
         throw error;
       }
       // 否则包装成通用错误
+      throw new HttpException(
+        error?.message || '创建订单失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 管理员创建订单（可分配工长和工匠）
+   * @param createOrderAdminDto 订单信息（包含wechatUserId）
+   * @returns 创建的订单
+   */
+  async createOrderAdmin(
+    createOrderAdminDto: CreateOrderAdminDto,
+  ): Promise<Order> {
+    try {
+      // 1. 验证微信用户是否存在
+      const wechatUser = await this.wechatUserRepository.findOne({
+        where: { id: createOrderAdminDto.wechat_user_id },
+      });
+
+      if (!wechatUser) {
+        throw new HttpException(
+          '微信用户不存在',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // 3. 验证工匠用户是否存在
+      const craftsman = await this.craftsmanUserRepository.findOne({
+        where: { id: createOrderAdminDto.craftsman_user_id },
+      });
+
+      if (!craftsman) {
+        throw new HttpException(
+          '工匠用户不存在',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // 4. 查询工匠的技能认证，判断工种
+      const skillVerification = await this.isSkillVerifiedRepository.findOne({
+        where: { userId: createOrderAdminDto.craftsman_user_id },
+      });
+
+      if (!skillVerification) {
+        throw new HttpException(
+          '该工匠未进行技能认证',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      if (!skillVerification.workKindName) {
+        throw new HttpException(
+          '该工匠的工种信息不完整',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 5. 根据工种名称判断订单类型
+      // 如果工种名称是"工长"，则为工长订单，否则为工匠订单
+      const orderType =
+        skillVerification.workKindName === '工长'
+          ? 'gangmaster'
+          : 'craftsman';
+
+      // 6. 根据 houseType 设置 houseTypeName
+      let houseTypeName: string | null = null;
+      if (createOrderAdminDto.houseType === 'new') {
+        houseTypeName = '新房';
+      } else if (createOrderAdminDto.houseType === 'old') {
+        houseTypeName = '老房';
+      }
+
+      // 7. 生成订单号
+      const orderNo = await generateOrderNo(orderType, this.orderRepository);
+
+      // 8. 创建订单（直接分配给工匠，状态为已接单）
+      const order = this.orderRepository.create({
+        area: String(createOrderAdminDto.area), // 转换为字符串存储
+        houseType: createOrderAdminDto.houseType,
+        houseTypeName: houseTypeName,
+        roomType: createOrderAdminDto.roomType,
+        location: createOrderAdminDto.location,
+        city: null,
+        district: null,
+        province: null,
+        latitude: null,
+        longitude: null,
+        wechat_user_id: createOrderAdminDto.wechat_user_id,
+        craftsman_user_id: createOrderAdminDto.craftsman_user_id,
+        work_kind_name: skillVerification.workKindName,
+        work_kind_id: skillVerification.workKindId || null,
+        order_status: OrderStatus.ACCEPTED, // 直接设为已接单
+        order_status_name: ORDER_STATUS_MAP[OrderStatus.ACCEPTED],
+        order_type: orderType,
+        order_no: orderNo,
+      });
+
+      const savedOrder = await this.orderRepository.save(order);
+
+      console.log('管理员创建订单成功:', {
+        orderId: savedOrder.id,
+        orderNo: savedOrder.order_no,
+        orderType: savedOrder.order_type,
+        craftsmanUserId: savedOrder.craftsman_user_id,
+      });
+
+      return savedOrder;
+    } catch (error) {
+      console.error('管理员创建订单失败:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         error?.message || '创建订单失败',
         HttpStatus.INTERNAL_SERVER_ERROR,

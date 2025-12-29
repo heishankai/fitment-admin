@@ -8,6 +8,8 @@ import {
   Param,
   ParseIntPipe,
   ValidationPipe,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { WechatUserService } from './wechat-user.service';
 import { Public } from '../auth/public.decorator';
@@ -55,6 +57,31 @@ export class WechatUserController {
     @Body() body: UpdateWechatUserDto,
   ) {
     return this.wechatUserService.updateWechatUser(id, body);
+  }
+
+  /**
+   * 查询所有微信用户
+   * @returns 所有微信用户列表
+   */
+  @Get()
+  async getAllWechatUsers() {
+    try {
+      const users = await this.wechatUserService.getAllWechatUsers();
+      return {
+        success: true,
+        data: users,
+        code: 200,
+        message: null,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '查询微信用户失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   /**

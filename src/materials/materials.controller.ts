@@ -15,6 +15,8 @@ import { MaterialsService } from './materials.service';
 import { CreateMaterialsDto } from './dto/create-materials.dto';
 import { AcceptMaterialsDto } from './dto/accept-materials.dto';
 import { MaterialsResponseDto } from './dto/materials-response.dto';
+import { BatchPaymentMaterialsDto } from './dto/batch-payment.dto';
+import { BatchAcceptMaterialsDto } from './dto/batch-accept.dto';
 import { Materials } from './materials.entity';
 
 @Controller('materials')
@@ -105,6 +107,54 @@ export class MaterialsController {
       }
       throw new HttpException(
         '确认辅材支付失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 一键支付：批量确认订单下所有未支付的辅材
+   * @param body 批量支付信息（包含订单ID）
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  @Post('batch-payment')
+  async batchPayment(
+    @Body(ValidationPipe) body: BatchPaymentMaterialsDto,
+  ): Promise<null> {
+    try {
+      return await this.materialsService.batchConfirmPaymentByOrderId(
+        body.orderId,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '一键支付辅材失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 一键验收：批量验收指定的辅材（通过辅材ID列表）
+   * @param body 批量验收信息（包含辅材ID列表）
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  @Post('batch-accept')
+  async batchAccept(
+    @Body(ValidationPipe) body: BatchAcceptMaterialsDto,
+  ): Promise<null> {
+    try {
+      return await this.materialsService.batchAcceptByMaterialsIds(
+        body.materialsIds,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '一键验收辅材失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

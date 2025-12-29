@@ -14,6 +14,7 @@ import {
 import { WorkPriceItemService } from './work-price-item.service';
 import { WorkPriceItem } from './work-price-item.entity';
 import { CreateWorkPriceItemsDto } from './dto/create-work-price-items.dto';
+import { MaterialsResponseDto } from '../materials/dto/materials-response.dto';
 
 @Controller('work-price-item')
 export class WorkPriceItemController {
@@ -247,6 +248,33 @@ export class WorkPriceItemController {
       }
       throw new HttpException(
         '查询子工价组失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 根据工价项ID和工匠ID查询辅材列表
+   * @param workPriceItemId 工价项ID
+   * @param craftsmanId 工匠ID
+   * @returns 辅材响应数据（包含商品列表和总价）
+   */
+  @Get(':workPriceItemId/materials/craftsman/:craftsmanId')
+  async getMaterialsByWorkPriceItemIdAndCraftsmanId(
+    @Param('workPriceItemId', ParseIntPipe) workPriceItemId: number,
+    @Param('craftsmanId', ParseIntPipe) craftsmanId: number,
+  ): Promise<MaterialsResponseDto> {
+    try {
+      return await this.workPriceItemService.getMaterialsByWorkPriceItemIdAndCraftsmanId(
+        workPriceItemId,
+        craftsmanId,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '查询辅材失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

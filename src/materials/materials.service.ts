@@ -4,11 +4,13 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Materials } from './materials.entity';
 import { CreateMaterialsDto } from './dto/create-materials.dto';
 import { AcceptMaterialsDto } from './dto/accept-materials.dto';
 import { MaterialsResponseDto, CommodityItemResponse } from './dto/materials-response.dto';
+import { BatchPaymentMaterialsDto } from './dto/batch-payment.dto';
+import { BatchAcceptMaterialsDto } from './dto/batch-accept.dto';
 import { Order } from '../order/order.entity';
 import { OrderStatus } from '../order/order.entity';
 import { PlatformIncomeRecordService } from '../platform-income-record/platform-income-record.service';
@@ -306,4 +308,199 @@ export class MaterialsService {
     }
   }
 
+  /**
+   * 一键支付：批量确认订单下所有未支付的辅材
+   * @param orderId 订单ID
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  async batchConfirmPaymentByOrderId(orderId: number): Promise<null> {
+    try {
+      // 1. 查找订单
+      const order = await this.orderRepository.findOne({
+        where: { id: orderId },
+      });
+
+      if (!order) {
+        throw new HttpException('订单不存在', HttpStatus.NOT_FOUND);
+      }
+
+      // 2. 检查订单是否已取消
+      if (order.order_status === OrderStatus.CANCELLED) {
+        throw new HttpException(
+          '订单已取消，无法进行支付操作',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 3. 查找该订单下所有未支付的辅材
+      const unpaidMaterials = await this.materialsRepository.find({
+        where: {
+          orderId: orderId,
+          is_paid: false,
+        },
+        relations: ['order'],
+      });
+
+      if (!unpaidMaterials || unpaidMaterials.length === 0) {
+        throw new HttpException(
+          '该订单下没有未支付的辅材',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 4. 批量更新支付状态
+      unpaidMaterials.forEach((material) => {
+        material.is_paid = true;
+      });
+
+      await this.materialsRepository.save(unpaidMaterials);
+
+      // 5. 为每个辅材创建平台收支记录
+      const recordPromises = unpaidMaterials.map((material) => {
+        return this.platformIncomeRecordService
+          .create({
+            orderId: material.orderId,
+            order_no: material.order.order_no,
+            cost_type: CostType.MATERIALS,
+            cost_amount: Number(material.settlement_amount),
+          })
+          .catch((recordError) => {
+            // 记录错误但不影响支付确认流程
+            console.error(
+              `创建平台收支记录失败 (辅材ID: ${material.id}):`,
+              recordError,
+            );
+          });
+      });
+
+      await Promise.all(recordPromises);
+
+      // 6. 返回null，全局拦截器会自动包装成标准响应
+      return null;
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      console.error('一键支付辅材失败:', error);
+      throw new HttpException(
+        '一键支付辅材失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 一键验收：批量验收指定的辅材（通过辅材ID列表）
+   * @param materialsIds 辅材ID列表
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  async batchAcceptByMaterialsIds(materialsIds: number[]): Promise<null> {
+    try {
+      // 1. 查找所有指定的辅材
+      const materials = await this.materialsRepository.find({
+        where: {
+          id: In(materialsIds),
+        },
+        relations: ['order'],
+      });
+
+      if (!materials || materials.length === 0) {
+        throw new HttpException('未找到指定的辅材', HttpStatus.NOT_FOUND);
+      }
+
+      // 2. 检查是否有不存在的辅材ID
+      const foundIds = materials.map((m) => m.id);
+      const notFoundIds = materialsIds.filter((id) => !foundIds.includes(id));
+      if (notFoundIds.length > 0) {
+        throw new HttpException(
+          `以下辅材ID不存在: ${notFoundIds.join(', ')}`,
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // 3. 验证所有辅材是否属于同一个订单（可选，但建议统一）
+      const orderIds = [...new Set(materials.map((m) => m.orderId))];
+      if (orderIds.length > 1) {
+        // 允许不同订单的辅材一起验收，但记录警告
+        console.warn(
+          `批量验收包含多个订单的辅材: ${orderIds.join(', ')}`,
+        );
+      }
+
+      // 4. 检查订单状态和验证条件
+      const invalidMaterials: string[] = [];
+      const validMaterials: Materials[] = [];
+
+      for (const material of materials) {
+        // 检查订单是否已取消
+        if (material.order.order_status === OrderStatus.CANCELLED) {
+          invalidMaterials.push(
+            `辅材ID ${material.id}: 订单已取消，无法进行验收操作`,
+          );
+          continue;
+        }
+
+        // 验证订单是否有接单的工匠
+        if (!material.order.craftsman_user_id) {
+          invalidMaterials.push(
+            `辅材ID ${material.id}: 订单尚未接单，无法验收`,
+          );
+          continue;
+        }
+
+        // 检查是否已付款
+        if (material.is_paid !== true) {
+          invalidMaterials.push(
+            `辅材ID ${material.id}: 辅材尚未付款，无法验收`,
+          );
+          continue;
+        }
+
+        // 检查是否已经验收过
+        if (material.is_accepted === true) {
+          invalidMaterials.push(
+            `辅材ID ${material.id}: 辅材已经验收过，无法重复验收`,
+          );
+          continue;
+        }
+
+        validMaterials.push(material);
+      }
+
+      // 5. 如果有无效的辅材，返回错误信息
+      if (invalidMaterials.length > 0) {
+        throw new HttpException(
+          invalidMaterials.join('; '),
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 6. 如果没有有效的辅材可以验收
+      if (validMaterials.length === 0) {
+        throw new HttpException(
+          '没有可以验收的辅材',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 7. 批量更新验收状态
+      validMaterials.forEach((material) => {
+        material.is_accepted = true;
+      });
+
+      await this.materialsRepository.save(validMaterials);
+
+      // 8. 返回null，全局拦截器会自动包装成标准响应
+      return null;
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      console.error('一键验收辅材失败:', error);
+      throw new HttpException(
+        '一键验收辅材失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 }

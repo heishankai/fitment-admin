@@ -321,6 +321,25 @@ export class WechatUserService {
   }
 
   /**
+   * 查询所有微信用户
+   * @returns 所有微信用户列表
+   */
+  async getAllWechatUsers(): Promise<WechatUser[]> {
+    try {
+      const users = await this.wechatUserRepository.find({
+        order: { createdAt: 'DESC' },
+      });
+      return users;
+    } catch (error) {
+      console.error('查询所有微信用户失败:', error);
+      throw new HttpException(
+        '查询所有微信用户失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
    * 获取微信access_token
    * @returns access_token
    */

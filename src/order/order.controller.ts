@@ -17,6 +17,7 @@ import { OrderService } from './order.service';
 import { OrderGateway } from './order.gateway';
 import { WorkPriceItemService } from '../work-price-item/work-price-item.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { CreateOrderAdminDto } from './dto/create-order-admin.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { AcceptOrderDto } from './dto/accept-order.dto';
 import { QueryCraftsmanOrdersDto } from './dto/query-craftsman-orders.dto';
@@ -534,6 +535,34 @@ export class OrderController {
       this.logger.error('获取连接的工匠失败', error);
       throw new HttpException(
         '获取连接的工匠失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 管理员创建订单（可分配工长和工匠）
+   * @param body 订单信息（包含wechatUserId）
+   * @returns 创建的订单
+   */
+  @Post('admin')
+  async createOrderAdmin(
+    @Body(ValidationPipe) body: CreateOrderAdminDto,
+  ) {
+    try {
+      const order = await this.orderService.createOrderAdmin(body);
+
+      return {
+        success: true,
+        data: order,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('管理员创建订单失败', error);
+      throw new HttpException(
+        '创建订单失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
