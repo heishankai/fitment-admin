@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Put,
+  Delete,
   Body,
   Param,
   ValidationPipe,
@@ -20,11 +21,11 @@ export class SwiperConfigController {
   constructor(private readonly swiperConfigService: SwiperConfigService) {}
 
   /**
-   * 获取轮播图配置
-   * @returns 轮播图配置记录
+   * 获取轮播图配置列表
+   * @returns 轮播图配置记录数组
    */
   @Get()
-  async getSwiperConfig(): Promise<SwiperConfig | null> {
+  async getSwiperConfig(): Promise<SwiperConfig[]> {
     return await this.swiperConfigService.getSwiperConfig();
   }
 
@@ -52,5 +53,26 @@ export class SwiperConfigController {
     @Body(ValidationPipe) updateDto: UpdateSwiperConfigDto,
   ): Promise<null> {
     return await this.swiperConfigService.update(id, updateDto);
+  }
+
+  /**
+   * 根据ID删除轮播图配置
+   * @param id 轮播图配置ID
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  @Delete(':id')
+  async delete(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<null> {
+    return await this.swiperConfigService.delete(id);
+  }
+
+  /**
+   * 删除所有轮播图配置
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  @Delete('all')
+  async deleteAll(): Promise<null> {
+    return await this.swiperConfigService.deleteAll();
   }
 }

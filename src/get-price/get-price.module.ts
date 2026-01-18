@@ -6,6 +6,7 @@ import { GetPriceService } from './get-price.service';
 import { GetPriceController } from './get-price.controller';
 import { GetPriceGateway } from './get-price.gateway';
 import { JWT_CONFIG } from '../common/constants/app.constants';
+import { AdminNotificationModule } from '../admin-notification/admin-notification.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { JWT_CONFIG } from '../common/constants/app.constants';
       secret: JWT_CONFIG.secret,
       signOptions: { expiresIn: JWT_CONFIG.expiresIn },
     }),
+    AdminNotificationModule,
   ],
   controllers: [GetPriceController],
   providers: [GetPriceService, GetPriceGateway],

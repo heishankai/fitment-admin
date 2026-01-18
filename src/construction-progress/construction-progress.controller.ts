@@ -70,4 +70,31 @@ export class ConstructionProgressController {
       );
     }
   }
+
+  /**
+   * 根据工价项ID和工匠ID查询对应分配订单的施工进度
+   * @param workPriceItemId 工价项ID
+   * @param craftsmanId 工匠ID
+   * @returns 施工进度列表
+   */
+  @Get('work-price-item/:workPriceItemId/craftsman/:craftsmanId')
+  async findByWorkPriceItemIdAndCraftsmanId(
+    @Param('workPriceItemId', ParseIntPipe) workPriceItemId: number,
+    @Param('craftsmanId', ParseIntPipe) craftsmanId: number,
+  ): Promise<ConstructionProgress[]> {
+    try {
+      return await this.constructionProgressService.findByWorkPriceItemIdAndCraftsmanId(
+        workPriceItemId,
+        craftsmanId,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '查询施工进度失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 }

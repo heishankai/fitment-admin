@@ -6,6 +6,7 @@ import { Order } from '../order/order.entity';
 import { CreateWorkPriceItemsDto } from './dto/create-work-price-items.dto';
 import { Materials } from '../materials/materials.entity';
 import { MaterialsResponseDto, CommodityItemResponse } from '../materials/dto/materials-response.dto';
+import { ConstructionProgressService } from '../construction-progress/construction-progress.service';
 
 @Injectable()
 export class WorkPriceItemService {
@@ -16,6 +17,7 @@ export class WorkPriceItemService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(Materials)
     private readonly materialsRepository: Repository<Materials>,
+    private readonly constructionProgressService: ConstructionProgressService,
   ) {}
 
   /**
@@ -372,40 +374,114 @@ export class WorkPriceItemService {
         relations: ['craftsman_user'],
       });
 
-      // 转换为数组并计算每个组的统计信息
-      const subWorkPriceGroups = Array.from(workGroupMap.entries())
-        .sort(([a], [b]) => a - b)
-        .map(([groupId, items]) => {
-          // total_price: 该组所有工价项的 settlement_amount 之和
-          const total_price = items.reduce(
-            (sum, item) => sum + (Number(item.settlement_amount) || 0),
-            0,
-          );
+      // 转换为数组并计算每个组的统计信息，同时为每个工价项添加最新的施工进度
+      const subWorkPriceGroups = await Promise.all(
+        Array.from(workGroupMap.entries())
+          .sort(([a], [b]) => a - b)
+          .map(async ([groupId, items]) => {
+            // total_price: 该组所有工价项的 settlement_amount 之和
+            const total_price = items.reduce(
+              (sum, item) => sum + (Number(item.settlement_amount) || 0),
+              0,
+            );
 
-          // total_is_accepted: 该组所有工价项的验收状态，全部为true才为true
-          const total_is_accepted =
-            items.length > 0 &&
-            items.every((item) => item.is_accepted === true);
+            // total_is_accepted: 该组所有工价项的验收状态，全部为true才为true
+            const total_is_accepted =
+              items.length > 0 &&
+              items.every((item) => item.is_accepted === true);
 
-          // is_paid: 该组所有工价项的支付状态，全部为true才为true
-          const is_paid =
-            items.length > 0 && items.every((item) => item.is_paid === true);
+            // is_paid: 该组所有工价项的支付状态，全部为true才为true
+            const is_paid =
+              items.length > 0 && items.every((item) => item.is_paid === true);
 
-          // total_service_fee: total_price * 10%
-          const total_service_fee = total_price * 0.1;
+            // total_service_fee: total_price * 10%
+            const total_service_fee = total_price * 0.1;
 
-          return {
-            work_group_id: groupId,
-            total_is_accepted,
-            total_price,
-            is_paid,
-            total_service_fee,
-            sub_work_price_groups: items,
-            // 工匠信息（昵称和手机号码）
-            craftsman_nickname: orderWithCraftsman?.craftsman_user?.nickname || null,
-            craftsman_phone: orderWithCraftsman?.craftsman_user?.phone || null,
-          };
-        });
+            // 为每个工价项添加最新的施工进度数据
+            const itemsWithProgress = await Promise.all(
+              items.map(async (item) => {
+                let latestConstructionProgress = null;
+
+                // 如果工价项已分配给工匠，查询对应的施工进度
+                if (item.assigned_craftsman_id) {
+                  try {
+                    // 确定要查询的订单ID
+                    let targetOrderId: number | null = null;
+
+                    // 判断当前查询的是分配订单还是普通订单
+                    if (order.parent_order_id && order.craftsman_user_id) {
+                      // 当前查询的是分配订单（工匠订单）
+                      // 工价项在父订单中，需要找到对应的工匠订单来查询施工进度
+                      // 当前订单就是对应的工匠订单
+                      targetOrderId = orderId;
+                    } else {
+                      // 当前查询的是普通订单（工长订单）
+                      // 工价项在当前订单中，如果已分配给工匠，需要找到对应的工匠订单
+                      const craftsmanOrder = await this.orderRepository.findOne({
+                        where: {
+                          parent_order_id: item.order_id,
+                          craftsman_user_id: item.assigned_craftsman_id,
+                          is_assigned: true,
+                        },
+                      });
+
+                      if (craftsmanOrder) {
+                        // 找到了对应的工匠订单，查询工匠订单的施工进度
+                        targetOrderId = craftsmanOrder.id;
+                      } else {
+                        // 如果没有找到工匠订单，说明工价项还未分配给工匠，或者工价项在当前订单中
+                        // 直接使用当前订单ID查询施工进度
+                        targetOrderId = orderId;
+                      }
+                    }
+
+                    // 查询该订单的所有施工进度，按创建时间倒序排列，取最新的一条
+                    if (targetOrderId) {
+                      const constructionProgressList =
+                        await this.constructionProgressService.findByOrderId(
+                          targetOrderId,
+                        );
+
+                      if (
+                        constructionProgressList &&
+                        constructionProgressList.length > 0
+                      ) {
+                        // 取最新的一条施工进度（已经是按 createdAt DESC 排序的）
+                        latestConstructionProgress =
+                          constructionProgressList[0];
+                      }
+                    }
+                  } catch (error) {
+                    // 查询施工进度失败不影响查询，只记录错误
+                    console.error(
+                      `查询工价项 ${item.id} 的施工进度失败:`,
+                      error,
+                    );
+                  }
+                }
+
+                return {
+                  ...item,
+                  latest_construction_progress: latestConstructionProgress,
+                };
+              }),
+            );
+
+            return {
+              work_group_id: groupId,
+              total_is_accepted,
+              total_price,
+              is_paid,
+              total_service_fee,
+              sub_work_price_groups: itemsWithProgress,
+              // 工匠信息（昵称和手机号码）
+              craftsman_nickname:
+                orderWithCraftsman?.craftsman_user?.nickname || null,
+              craftsman_phone:
+                orderWithCraftsman?.craftsman_user?.phone || null,
+            };
+          }),
+      );
 
       return subWorkPriceGroups;
     } catch (error) {

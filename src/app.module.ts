@@ -31,6 +31,7 @@ import {
   CraftsmanWechatChatModule,
   PlatformNoticeModule,
   SystemNotificationModule,
+  AdminNotificationModule,
   GeolocationModule,
   OrderModule,
   WalletModule,
@@ -44,6 +45,8 @@ import {
   WorkPriceItemModule,
   IndependentPageConfigModule,
   GetPriceModule,
+  WelcomeModule,
+  ActivityModule,
 } from './index';
 // 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
@@ -92,6 +95,7 @@ import { WxPayModule } from './common/wx-pay/wx-pay.module';
     CraftsmanWechatChatModule, // 工匠-微信用户聊天模块
     PlatformNoticeModule, // 平台公告模块
     SystemNotificationModule, // 系统通知模块
+  AdminNotificationModule, // 管理员通知模块
     OrderModule, // 订单模块
     WalletModule, // 钱包模块
     CraftsmanBankCardModule, // 工匠银行卡模块
@@ -105,6 +109,8 @@ import { WxPayModule } from './common/wx-pay/wx-pay.module';
     PlatformIncomeRecordModule, // 平台收支记录模块
     WorkPriceItemModule, // 工价项模块
     GetPriceModule, // 获取报价模块
+    WelcomeModule, // 欢迎页配置模块
+    ActivityModule, // 活动模块
   ],
   // 导入其他模块的数组
   controllers: [AppController], // 注册控制器，处理 HTTP 请求

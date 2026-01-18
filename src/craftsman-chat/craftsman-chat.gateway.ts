@@ -12,6 +12,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Injectable, Logger } from '@nestjs/common';
 import { JWT_CONFIG } from '../common/constants/app.constants';
 import { CraftsmanChatService } from './craftsman-chat.service';
+import { AdminNotificationService } from '../admin-notification/admin-notification.service';
 
 /**
  * WebSocket Gateway for Craftsman Chat
@@ -41,6 +42,7 @@ export class CraftsmanChatGateway
   constructor(
     private readonly jwtService: JwtService,
     private readonly craftsmanChatService: CraftsmanChatService,
+    private readonly adminNotificationService: AdminNotificationService,
   ) {}
 
   /**
@@ -90,7 +92,7 @@ export class CraftsmanChatGateway
               roomId,
               'admin',
               0,
-              '欢迎使用叮当优+，请问有什么可以帮助您的吗？',
+              '欢迎使用智惠装，请问有什么可以帮助您的吗？',
               'text',
             );
             
@@ -214,6 +216,32 @@ export class CraftsmanChatGateway
         content,
         messageType,
       );
+
+      // 如果是工匠发送的消息，创建通知
+      if (userType === 'craftsman') {
+        try {
+          const room = await this.craftsmanChatService.findOne(roomId);
+          const senderName = room.craftsman_user?.nickname || '工匠';
+          await this.adminNotificationService.create({
+            title: `${senderName} 发来新消息`,
+            content: content.length > 100 ? `${content.substring(0, 100)}...` : content,
+            notification_type: 'chat-message',
+            notification_time: new Date().toISOString(),
+            is_read: false,
+            extra_data: {
+              chat_type: 'craftsman-chat',
+              room_id: roomId,
+              sender_id: userId,
+              sender_type: 'craftsman',
+              message_id: message.id,
+            },
+          });
+          this.logger.log(`已为房间 ${roomId} 创建工匠消息通知`);
+        } catch (error) {
+          this.logger.error('创建通知失败', error);
+          // 通知创建失败不影响消息发送
+        }
+      }
 
       // 构建消息响应（保持与数据库字段名一致）
       const messageData = {

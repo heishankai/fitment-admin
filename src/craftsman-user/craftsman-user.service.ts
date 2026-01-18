@@ -55,7 +55,7 @@ export class CraftsmanUserService {
       if (!user) {
         user = this.craftsmanUserRepository.create({
           phone,
-          nickname: '叮当优+师傅',
+          nickname: '智惠装师傅',
           avatar:
             'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',
         });
@@ -78,7 +78,7 @@ export class CraftsmanUserService {
       // 5. 返回用户信息
       return {
         phone: user.phone,
-        nickname: user.nickname || '叮当优+师傅',
+        nickname: user.nickname || '智惠装师傅',
         avatar:
           user.avatar ||
           'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',
@@ -140,7 +140,7 @@ export class CraftsmanUserService {
 
       return {
         phone: user.phone,
-        nickname: user.nickname || '叮当优+师傅',
+        nickname: user.nickname || '智惠装师傅',
         avatar:
           user.avatar ||
           'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',

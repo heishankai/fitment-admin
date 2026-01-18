@@ -14,7 +14,7 @@ export class CraftsmanUser {
   @Column({ unique: true })
   phone: string;
 
-  @Column({ nullable: true, default: '叮当优+师傅' })
+  @Column({ nullable: true, default: '智惠装师傅' })
   nickname: string;
 
   @Column({

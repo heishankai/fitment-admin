@@ -15,10 +15,15 @@ import { WorkPriceItemService } from './work-price-item.service';
 import { WorkPriceItem } from './work-price-item.entity';
 import { CreateWorkPriceItemsDto } from './dto/create-work-price-items.dto';
 import { MaterialsResponseDto } from '../materials/dto/materials-response.dto';
+import { ConstructionProgressService } from '../construction-progress/construction-progress.service';
+import { ConstructionProgress } from '../construction-progress/construction-progress.entity';
 
 @Controller('work-price-item')
 export class WorkPriceItemController {
-  constructor(private readonly workPriceItemService: WorkPriceItemService) {}
+  constructor(
+    private readonly workPriceItemService: WorkPriceItemService,
+    private readonly constructionProgressService: ConstructionProgressService,
+  ) {}
 
   /**
    * 根据订单ID查询工价项列表
@@ -79,7 +84,10 @@ export class WorkPriceItemController {
       if (error instanceof HttpException) {
         throw error;
       }
-      throw new HttpException('创建工价项失败', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        '创建工价项失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
@@ -144,7 +152,10 @@ export class WorkPriceItemController {
       if (error instanceof HttpException) {
         throw error;
       }
-      throw new HttpException('更新工价项失败', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        '更新工价项失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
@@ -154,7 +165,9 @@ export class WorkPriceItemController {
    * @returns 更新后的工价项
    */
   @Put(':id/pay')
-  async markAsPaid(@Param('id', ParseIntPipe) id: number): Promise<WorkPriceItem> {
+  async markAsPaid(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<WorkPriceItem> {
     try {
       return await this.workPriceItemService.markAsPaid(id);
     } catch (error) {
@@ -181,7 +194,10 @@ export class WorkPriceItemController {
       if (error instanceof HttpException) {
         throw error;
       }
-      throw new HttpException('删除工价项失败', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        '删除工价项失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
@@ -273,11 +289,34 @@ export class WorkPriceItemController {
       if (error instanceof HttpException) {
         throw error;
       }
+      throw new HttpException('查询辅材失败', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * 根据工价项ID和工匠ID查询对应分配订单的施工进度
+   * @param workPriceItemId 工价项ID
+   * @param craftsmanId 工匠ID
+   * @returns 施工进度列表
+   */
+  @Get(':workPriceItemId/construction-progress/craftsman/:craftsmanId')
+  async getConstructionProgressByWorkPriceItemIdAndCraftsmanId(
+    @Param('workPriceItemId', ParseIntPipe) workPriceItemId: number,
+    @Param('craftsmanId', ParseIntPipe) craftsmanId: number,
+  ): Promise<ConstructionProgress[]> {
+    try {
+      return await this.constructionProgressService.findByWorkPriceItemIdAndCraftsmanId(
+        workPriceItemId,
+        craftsmanId,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
-        '查询辅材失败',
+        '查询施工进度失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
 }
-

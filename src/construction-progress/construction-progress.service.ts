@@ -9,6 +9,7 @@ import { ConstructionProgress } from './construction-progress.entity';
 import { CreateConstructionProgressDto } from './dto/create-construction-progress.dto';
 import { Order } from '../order/order.entity';
 import { OrderStatus } from '../order/order.entity';
+import { WorkPriceItem } from '../work-price-item/work-price-item.entity';
 
 @Injectable()
 export class ConstructionProgressService {
@@ -17,6 +18,8 @@ export class ConstructionProgressService {
     private readonly constructionProgressRepository: Repository<ConstructionProgress>,
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
+    @InjectRepository(WorkPriceItem)
+    private readonly workPriceItemRepository: Repository<WorkPriceItem>,
   ) {}
 
   /**
@@ -121,6 +124,77 @@ export class ConstructionProgressService {
       console.error('创建施工进度失败:', error);
       throw new HttpException(
         '创建施工进度失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 根据工价项ID和工匠ID查询对应分配订单的施工进度
+   * @param workPriceItemId 工价项ID
+   * @param craftsmanId 工匠ID
+   * @returns 施工进度列表
+   */
+  async findByWorkPriceItemIdAndCraftsmanId(
+    workPriceItemId: number,
+    craftsmanId: number,
+  ): Promise<ConstructionProgress[]> {
+    try {
+      // 1. 查找工价项
+      const workPriceItem = await this.workPriceItemRepository.findOne({
+        where: { id: workPriceItemId },
+        relations: ['order'],
+      });
+
+      if (!workPriceItem) {
+        throw new HttpException('工价项不存在', HttpStatus.NOT_FOUND);
+      }
+
+      // 2. 验证工价项是否属于该工匠
+      if (workPriceItem.assigned_craftsman_id !== craftsmanId) {
+        throw new HttpException(
+          '无权查看此工价项的施工进度',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
+      // 3. 确定要查询的订单ID
+      // 如果工价项所在的订单有 parent_order_id，说明这是父订单（工长订单）
+      // 需要查找对应的工匠订单来查询施工进度
+      let targetOrderId = workPriceItem.order_id;
+      
+      if (workPriceItem.order.parent_order_id === null) {
+        // 工价项在父订单（工长订单）中，需要找到对应的工匠订单
+        const craftsmanOrder = await this.orderRepository.findOne({
+          where: {
+            parent_order_id: workPriceItem.order_id,
+            craftsman_user_id: craftsmanId,
+            is_assigned: true,
+          },
+        });
+
+        if (craftsmanOrder) {
+          // 找到了对应的工匠订单，查询工匠订单的施工进度
+          targetOrderId = craftsmanOrder.id;
+        } else {
+          // 如果没有找到工匠订单，说明工价项还未分配给工匠，返回空列表
+          return [];
+        }
+      }
+      // 如果工价项已经在工匠订单中（order.parent_order_id 不为 null），直接使用当前订单ID
+
+      // 4. 查询该订单的所有施工进度
+      return await this.constructionProgressRepository.find({
+        where: { orderId: targetOrderId },
+        order: { createdAt: 'DESC' },
+      });
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      console.error('查询施工进度失败:', error);
+      throw new HttpException(
+        '查询施工进度失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

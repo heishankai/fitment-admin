@@ -15,6 +15,7 @@ import { WalletTransactionModule } from '../wallet-transaction/wallet-transactio
 import { WorkPriceItemModule } from '../work-price-item/work-price-item.module';
 import { PlatformIncomeRecordModule } from '../platform-income-record/platform-income-record.module';
 import { SmsModule } from '../sms/sms.module';
+import { ConstructionProgressModule } from '../construction-progress/construction-progress.module';
 
 @Module({
   imports: [
@@ -34,10 +35,10 @@ import { SmsModule } from '../sms/sms.module';
     WalletTransactionModule,
     PlatformIncomeRecordModule,
     SmsModule, // 导入短信模块以发送订单通知
+    ConstructionProgressModule, // 导入施工进度模块
   ],
   controllers: [OrderController],
   providers: [OrderService, OrderGateway],
   exports: [OrderService, OrderGateway],
 })
 export class OrderModule {}
-

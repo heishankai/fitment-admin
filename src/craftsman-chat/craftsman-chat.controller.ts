@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { CraftsmanChatService } from './craftsman-chat.service';
 import { CreateCraftsmanChatRoomDto } from './dto/create-craftsman-chat-room.dto';
+import { AdminNotificationService } from '../admin-notification/admin-notification.service';
 
 /**
  * 工匠聊天控制器
@@ -19,7 +20,10 @@ import { CreateCraftsmanChatRoomDto } from './dto/create-craftsman-chat-room.dto
  */
 @Controller('craftsman-chat')
 export class CraftsmanChatController {
-  constructor(private readonly craftsmanChatService: CraftsmanChatService) {}
+  constructor(
+    private readonly craftsmanChatService: CraftsmanChatService,
+    private readonly adminNotificationService: AdminNotificationService,
+  ) {}
 
   /**
    * 获取管理员的聊天房间列表（带最后一条消息和用户头像）
@@ -119,6 +123,43 @@ export class CraftsmanChatController {
   @Get('rooms/:roomId')
   async getRoom(@Param('roomId') roomId: number) {
     return await this.craftsmanChatService.findOne(Number(roomId));
+  }
+
+  /**
+   * 标记房间消息为已读
+   * POST /craftsman-chat/rooms/:roomId/read
+   * 进入房间后调用此接口，红点会消失
+   */
+  @Post('rooms/:roomId/read')
+  async markRoomAsRead(@Param('roomId') roomId: number, @Request() req: any) {
+    const user = req.user;
+    // 只有管理员可以标记消息为已读
+    if (user.type === 'craftsman') {
+      throw new HttpException('无权限访问', HttpStatus.FORBIDDEN);
+    }
+
+    await this.craftsmanChatService.markRoomAsRead(Number(roomId));
+    
+    // 标记该房间的消息通知为已读
+    try {
+      const notifications = await this.adminNotificationService.getAllNotifications(
+        'chat-message',
+        false,
+      );
+      const roomNotifications = notifications.filter(
+        (n) =>
+          n.extra_data?.chat_type === 'craftsman-chat' &&
+          n.extra_data?.room_id === Number(roomId),
+      );
+      for (const notif of roomNotifications) {
+        await this.adminNotificationService.markAsRead(notif.id);
+      }
+    } catch (error) {
+      // 通知标记失败不影响主流程
+      console.error('标记通知已读失败', error);
+    }
+    
+    return { message: '标记成功', success: true };
   }
 
   /**

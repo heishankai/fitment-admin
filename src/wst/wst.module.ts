@@ -6,6 +6,7 @@ import { WstController } from './wst.controller';
 import { ChatRoom } from './entities/chat-room.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { WechatUserModule } from '../wechat-user/wechat-user.module';
+import { AdminNotificationModule } from '../admin-notification/admin-notification.module';
 
 /**
  * 聊天模块
@@ -16,6 +17,7 @@ import { WechatUserModule } from '../wechat-user/wechat-user.module';
   imports: [
     TypeOrmModule.forFeature([ChatRoom, ChatMessage]),
     WechatUserModule,
+    AdminNotificationModule,
   ],
   controllers: [WstController],
   providers: [WstGateway, WstService],

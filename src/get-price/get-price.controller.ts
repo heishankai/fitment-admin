@@ -46,18 +46,8 @@ export class GetPriceController {
   async createGetPrice(
     @Body(ValidationPipe) createGetPriceDto: CreateGetPriceDto,
   ): Promise<null> {
-    // 创建记录并获取创建的记录
-    const createdRecord = await this.getPriceService.createGetPrice(createGetPriceDto);
-    
-    // 发送 WebSocket 通知
-    if (createdRecord) {
-      try {
-        this.getPriceGateway.notifyNewGetPrice(createdRecord);
-      } catch (error) {
-        // WebSocket 通知失败不影响创建操作
-        console.error('WebSocket 通知失败:', error);
-      }
-    }
+    // 创建记录（服务内部会自动创建通知）
+    await this.getPriceService.createGetPrice(createGetPriceDto);
     
     return null;
   }

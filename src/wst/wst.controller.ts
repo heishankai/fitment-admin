@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { WstService } from './wst.service';
 import { CreateChatRoomDto } from './dto/create-chat-room.dto';
+import { AdminNotificationService } from '../admin-notification/admin-notification.service';
 
 /**
  * 聊天控制器
@@ -19,7 +20,10 @@ import { CreateChatRoomDto } from './dto/create-chat-room.dto';
  */
 @Controller('chat')
 export class WstController {
-  constructor(private readonly wstService: WstService) {}
+  constructor(
+    private readonly wstService: WstService,
+    private readonly adminNotificationService: AdminNotificationService,
+  ) {}
 
   /**
    * 获取客服的聊天房间列表（带最后一条消息和用户头像）
@@ -118,6 +122,43 @@ export class WstController {
   @Get('rooms/:roomId')
   async getRoom(@Param('roomId') roomId: number) {
     return await this.wstService.findOne(Number(roomId));
+  }
+
+  /**
+   * 标记房间消息为已读
+   * PUT /chat/rooms/:roomId/read
+   * 进入房间后调用此接口，红点会消失
+   */
+  @Post('rooms/:roomId/read')
+  async markRoomAsRead(@Param('roomId') roomId: number, @Request() req: any) {
+    const user = req.user;
+    // 只有客服可以标记消息为已读
+    if (user.type === 'wechat') {
+      throw new HttpException('无权限访问', HttpStatus.FORBIDDEN);
+    }
+
+    await this.wstService.markRoomAsRead(Number(roomId));
+    
+    // 标记该房间的消息通知为已读
+    try {
+      const notifications = await this.adminNotificationService.getAllNotifications(
+        'chat-message',
+        false,
+      );
+      const roomNotifications = notifications.filter(
+        (n) =>
+          n.extra_data?.chat_type === 'wechat-chat' &&
+          n.extra_data?.room_id === Number(roomId),
+      );
+      for (const notif of roomNotifications) {
+        await this.adminNotificationService.markAsRead(notif.id);
+      }
+    } catch (error) {
+      // 通知标记失败不影响主流程
+      console.error('标记通知已读失败', error);
+    }
+    
+    return { message: '标记成功', success: true };
   }
 
   /**

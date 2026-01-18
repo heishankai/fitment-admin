@@ -23,6 +23,7 @@ import { WalletTransactionType } from '../wallet-transaction/wallet-transaction.
 import { PlatformIncomeRecordService } from '../platform-income-record/platform-income-record.service';
 import { CostType } from '../platform-income-record/platform-income-record.entity';
 import { SmsService } from '../sms/sms.service';
+import { ConstructionProgressService } from '../construction-progress/construction-progress.service';
 
 /**
  * 计算两点之间的距离（公里）
@@ -200,6 +201,7 @@ export class OrderService {
     private readonly walletTransactionService: WalletTransactionService,
     private readonly platformIncomeRecordService: PlatformIncomeRecordService,
     private readonly smsService: SmsService,
+    private readonly constructionProgressService: ConstructionProgressService,
   ) {}
 
   /**
@@ -962,11 +964,69 @@ export class OrderService {
 
     // 按 work_group_id 分组，返回所有工价组
     // 主工价组（work_group_id = 1）作为 parent_work_price_groups 返回
-    const parentWorkPriceGroups = mainWorkItems.map((item) => {
-      return {
-        ...item,
-      };
-    });
+    // 为每个工价项添加最新的施工进度数据
+    const parentWorkPriceGroups = await Promise.all(
+      mainWorkItems.map(async (item) => {
+        let latestConstructionProgress = null;
+
+        // 如果工价项已分配给工匠，查询对应的施工进度
+        if (item.assigned_craftsman_id) {
+          try {
+            // 确定要查询的订单ID
+            let targetOrderId: number | null = null;
+
+            // 判断当前查询的是分配订单还是普通订单
+            if (order.parent_order_id && order.craftsman_user_id) {
+              // 当前查询的是分配订单（工匠订单）
+              // 工价项在父订单中，需要找到对应的工匠订单来查询施工进度
+              // 当前订单就是对应的工匠订单
+              targetOrderId = orderId;
+            } else {
+              // 当前查询的是普通订单（工长订单）
+              // 工价项在当前订单中，如果已分配给工匠，需要找到对应的工匠订单
+              const craftsmanOrder = await this.orderRepository.findOne({
+                where: {
+                  parent_order_id: item.order_id,
+                  craftsman_user_id: item.assigned_craftsman_id,
+                  is_assigned: true,
+                },
+              });
+
+              if (craftsmanOrder) {
+                // 找到了对应的工匠订单，查询工匠订单的施工进度
+                targetOrderId = craftsmanOrder.id;
+              } else {
+                // 如果没有找到工匠订单，说明工价项还未分配给工匠，或者工价项在当前订单中
+                // 直接使用当前订单ID查询施工进度
+                targetOrderId = orderId;
+              }
+            }
+
+            // 查询该订单的所有施工进度，按创建时间倒序排列，取最新的一条
+            if (targetOrderId) {
+              const constructionProgressList =
+                await this.constructionProgressService.findByOrderId(targetOrderId);
+
+              if (constructionProgressList && constructionProgressList.length > 0) {
+                // 取最新的一条施工进度（已经是按 createdAt DESC 排序的）
+                latestConstructionProgress = constructionProgressList[0];
+              }
+            }
+          } catch (error) {
+            // 查询施工进度失败不影响订单查询，只记录错误
+            console.error(
+              `查询工价项 ${item.id} 的施工进度失败:`,
+              error,
+            );
+          }
+        }
+
+        return {
+          ...item,
+          latest_construction_progress: latestConstructionProgress,
+        };
+      }),
+    );
 
     // 返回订单信息，包含父工价列表和统计信息（在订单级别）
     return {
@@ -1426,6 +1486,8 @@ export class OrderService {
         pageSize = 10,
         craftsman_user_name = '',
         wechat_user_name = '',
+        craftsman_user_phone = '',
+        wechat_user_phone = '',
         work_kind_name = '',
         order_no = '',
         order_status,
@@ -1450,6 +1512,20 @@ export class OrderService {
       if (wechat_user_name) {
         query.andWhere('wechat_user.nickname LIKE :wechat_user_name', {
           wechat_user_name: `%${wechat_user_name}%`,
+        });
+      }
+
+      // 添加筛选条件：工匠用户手机号（精确匹配）
+      if (craftsman_user_phone) {
+        query.andWhere('craftsman_user.phone = :craftsman_user_phone', {
+          craftsman_user_phone: craftsman_user_phone.trim(),
+        });
+      }
+
+      // 添加筛选条件：微信用户手机号（精确匹配）
+      if (wechat_user_phone) {
+        query.andWhere('wechat_user.phone = :wechat_user_phone', {
+          wechat_user_phone: wechat_user_phone.trim(),
         });
       }
 
@@ -1576,10 +1652,183 @@ export class OrderService {
         this.normalizeOrderWorkPrices(order),
       );
 
-      // 返回结果（包含分页信息的完整格式）
+      // 分离工长订单和工匠订单
+      const gangmasterOrders: any[] = [];
+      const craftsmanOrders: any[] = [];
+      
+      normalizedData.forEach((order) => {
+        if (order.order_type === 'gangmaster') {
+          // 工长订单，初始化 children 数组
+          gangmasterOrders.push({
+            ...order,
+            children: [],
+          });
+        } else if (order.order_type === 'craftsman' && order.parent_order_id) {
+          // 工匠订单，有父订单
+          craftsmanOrders.push(order);
+        } else {
+          // 其他类型的订单，直接添加到工长订单列表
+          gangmasterOrders.push(order);
+        }
+      });
+
+      // 如果查询结果中有工长订单，需要查找它们的所有子订单（工匠订单）
+      const gangmasterOrderIds = gangmasterOrders
+        .filter((o) => o.order_type === 'gangmaster')
+        .map((o) => o.id);
+      
+      if (gangmasterOrderIds.length > 0) {
+        // 查询这些工长订单的所有子订单
+        const childOrders = await this.orderRepository.find({
+          where: { parent_order_id: In(gangmasterOrderIds) },
+          relations: ['wechat_user', 'craftsman_user'],
+        });
+        
+        // 标准化子订单数据
+        const normalizedChildOrders = childOrders.map((order) =>
+          this.normalizeOrderWorkPrices(order),
+        );
+        
+        // 将子订单添加到对应的工长订单的 children 中
+        normalizedChildOrders.forEach((childOrder) => {
+          const parentOrder = gangmasterOrders.find(
+            (o) => o.id === childOrder.parent_order_id,
+          );
+          if (parentOrder) {
+            parentOrder.children.push(childOrder);
+          }
+        });
+      }
+
+      // 处理查询结果中的工匠订单，将它们添加到对应工长订单的 children 中
+      const missingParentOrderIds = new Set<number>();
+      
+      craftsmanOrders.forEach((craftsmanOrder) => {
+        const parentOrder = gangmasterOrders.find(
+          (o) => o.id === craftsmanOrder.parent_order_id,
+        );
+        if (parentOrder) {
+          // 检查是否已经存在（避免重复）
+          const exists = parentOrder.children.some(
+            (child: any) => child.id === craftsmanOrder.id,
+          );
+          if (!exists) {
+            parentOrder.children.push(craftsmanOrder);
+          }
+        } else {
+          // 如果父订单不在当前查询结果中，记录需要查询的父订单ID
+          if (craftsmanOrder.parent_order_id) {
+            missingParentOrderIds.add(craftsmanOrder.parent_order_id);
+          }
+        }
+      });
+
+      // 如果查询结果中有工匠订单，但父订单不在查询结果中，需要查询父订单
+      if (missingParentOrderIds.size > 0) {
+        const parentOrders = await this.orderRepository.find({
+          where: { id: In(Array.from(missingParentOrderIds)) },
+          relations: ['wechat_user', 'craftsman_user'],
+        });
+        
+        // 标准化父订单数据
+        const normalizedParentOrders = parentOrders.map((order) =>
+          this.normalizeOrderWorkPrices(order),
+        );
+        
+        // 将父订单添加到返回结果中，并初始化 children 数组
+        normalizedParentOrders.forEach((parentOrder) => {
+          gangmasterOrders.push({
+            ...parentOrder,
+            children: [],
+          });
+        });
+        
+        // 将工匠订单添加到对应父订单的 children 中
+        craftsmanOrders.forEach((craftsmanOrder) => {
+          const parentOrder = gangmasterOrders.find(
+            (o) => o.id === craftsmanOrder.parent_order_id,
+          );
+          if (parentOrder) {
+            // 检查是否已经存在（避免重复）
+            const exists = parentOrder.children.some(
+              (child: any) => child.id === craftsmanOrder.id,
+            );
+            if (!exists) {
+              parentOrder.children.push(craftsmanOrder);
+            }
+          }
+        });
+      }
+
+      // 为所有订单的 craftsman_user 添加工种信息
+      // 收集所有需要查询工种信息的工匠用户ID
+      const craftsmanUserIds = new Set<number>();
+      
+      // 遍历所有工长订单及其子订单
+      const collectCraftsmanIds = (orders: any[]) => {
+        orders.forEach((order) => {
+          if (order.craftsman_user?.id) {
+            craftsmanUserIds.add(order.craftsman_user.id);
+          }
+          // 递归处理子订单
+          if (order.children && Array.isArray(order.children)) {
+            collectCraftsmanIds(order.children);
+          }
+        });
+      };
+      
+      collectCraftsmanIds(gangmasterOrders);
+      
+      // 批量查询所有工匠的技能认证信息
+      let skillInfoMap = new Map<number, IsSkillVerified>();
+      if (craftsmanUserIds.size > 0) {
+        const skillInfos = await this.isSkillVerifiedRepository.find({
+          where: { userId: In(Array.from(craftsmanUserIds)) },
+        });
+        skillInfos.forEach((skillInfo) => {
+          skillInfoMap.set(skillInfo.userId, skillInfo);
+        });
+      }
+      
+      // 为每个订单的 craftsman_user 添加工种信息
+      const addSkillInfoToCraftsman = (orders: any[]) => {
+        orders.forEach((order) => {
+          if (order.craftsman_user?.id) {
+            const skillInfo = skillInfoMap.get(order.craftsman_user.id);
+            if (skillInfo) {
+              order.craftsman_user.workKindId = skillInfo.workKindId;
+              order.craftsman_user.workKindName = skillInfo.workKindName;
+            }
+          }
+          // 递归处理子订单
+          if (order.children && Array.isArray(order.children)) {
+            addSkillInfoToCraftsman(order.children);
+          }
+        });
+      };
+      
+      addSkillInfoToCraftsman(gangmasterOrders);
+
+      // 将空的 children 数组转换为 null
+      const convertEmptyChildrenToNull = (orders: any[]) => {
+        orders.forEach((order) => {
+          if (order.children && Array.isArray(order.children)) {
+            if (order.children.length === 0) {
+              order.children = null;
+            } else {
+              // 递归处理子订单（虽然子订单通常不会有 children，但为了安全起见）
+              convertEmptyChildrenToNull(order.children);
+            }
+          }
+        });
+      };
+      
+      convertEmptyChildrenToNull(gangmasterOrders);
+
+      // 返回结果（只返回工长订单，工匠订单已包裹在 children 中）
       return {
         success: true,
-        data: normalizedData,
+        data: gangmasterOrders,
         code: 200,
         message: null,
         pageIndex,
@@ -1602,6 +1851,53 @@ export class OrderService {
         total: 0,
         pageTotal: 0,
       };
+    }
+  }
+
+  /**
+   * 根据订单编号查询订单及其子订单（调试用）
+   * @param orderNo 订单编号
+   * @returns 订单信息及其子订单列表
+   */
+  async findOrderWithChildrenByOrderNo(orderNo: string): Promise<any> {
+    try {
+      // 查询订单
+      const order = await this.orderRepository.findOne({
+        where: { order_no: orderNo },
+        relations: ['wechat_user', 'craftsman_user'],
+      });
+
+      if (!order) {
+        throw new HttpException('订单不存在', HttpStatus.NOT_FOUND);
+      }
+
+      // 查询子订单
+      const childOrders = await this.orderRepository.find({
+        where: { parent_order_id: order.id },
+        relations: ['wechat_user', 'craftsman_user'],
+        order: { createdAt: 'ASC' },
+      });
+
+      // 标准化订单数据
+      const normalizedOrder = this.normalizeOrderWorkPrices(order);
+      const normalizedChildOrders = childOrders.map((child) =>
+        this.normalizeOrderWorkPrices(child),
+      );
+
+      return {
+        order: normalizedOrder,
+        childOrders: normalizedChildOrders,
+        childCount: normalizedChildOrders.length,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      console.error('查询订单及其子订单失败:', error);
+      throw new HttpException(
+        '查询订单及其子订单失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 

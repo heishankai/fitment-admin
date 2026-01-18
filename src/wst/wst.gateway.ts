@@ -12,6 +12,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Injectable, Logger } from '@nestjs/common';
 import { JWT_CONFIG } from '../common/constants/app.constants';
 import { WstService } from './wst.service';
+import { AdminNotificationService } from '../admin-notification/admin-notification.service';
 
 /**
  * WebSocket Gateway for Chat
@@ -39,6 +40,7 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly jwtService: JwtService,
     private readonly wstService: WstService,
+    private readonly adminNotificationService: AdminNotificationService,
   ) {}
 
   /**
@@ -87,7 +89,7 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
               roomId,
               'service',
               0,
-              '欢迎使用叮当优+，请问有什么可以帮助您的吗？',
+              '欢迎使用智惠装，请问有什么可以帮助您的吗？',
               'text',
             );
             
@@ -210,6 +212,32 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
         content,
         messageType,
       );
+
+      // 如果是业主发送的消息，创建通知
+      if (userType === 'wechat') {
+        try {
+          const room = await this.wstService.findOne(roomId);
+          const senderName = room.wechat_user?.nickname || '业主';
+          await this.adminNotificationService.create({
+            title: `${senderName} 发来新消息`,
+            content: content.length > 100 ? `${content.substring(0, 100)}...` : content,
+            notification_type: 'chat-message',
+            notification_time: new Date().toISOString(),
+            is_read: false,
+            extra_data: {
+              chat_type: 'wechat-chat',
+              room_id: roomId,
+              sender_id: userId,
+              sender_type: 'wechat',
+              message_id: message.id,
+            },
+          });
+          this.logger.log(`已为房间 ${roomId} 创建业主消息通知`);
+        } catch (error) {
+          this.logger.error('创建通知失败', error);
+          // 通知创建失败不影响消息发送
+        }
+      }
 
       // 构建消息响应（保持与数据库字段名一致）
       const messageData = {

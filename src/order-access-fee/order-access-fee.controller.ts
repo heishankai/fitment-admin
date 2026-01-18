@@ -204,29 +204,4 @@ export class OrderAccessFeeController {
     await this.orderAccessFeeService.setUsedByOrderNo(body.order_no,body.main_order_id);
     return true;
   }
-  //   return this.orderAccessFeeService.findAll();
-  // }
-
-  // @Get('test')
-  // test() {
-  //   const payload = {
-  //     userId: 3,
-  //     phone: 15372894147,
-  //     code: 123456, // 将验证码包含在payload中
-  //     type: 'craftsman',
-  //   };
-
-  //   const token = this.jwtService.sign(payload, {
-  //     secret: JWT_CONFIG.secret,
-  //     expiresIn: JWT_CONFIG.expiresIn,
-  //   });
-
-  //   return {
-  //     phone: 15372894147,
-  //     nickname: '叮当优+师傅',
-  //     avatar:
-  //       'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',
-  //     token,
-  //   };
-  // }
 }

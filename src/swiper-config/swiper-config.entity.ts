@@ -11,8 +11,14 @@ export class SwiperConfig {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column('simple-json')
-  swiper_image: string[]; // 轮播图图片数组
+  @Column('text')
+  swiper_image: string; // 轮播图图片URL
+
+  @Column('varchar', { length: 100, nullable: true })
+  title: string; // 标题
+
+  @Column('varchar', { length: 200, nullable: true })
+  description: string; // 描述
 
   @CreateDateColumn()
   createdAt: Date;

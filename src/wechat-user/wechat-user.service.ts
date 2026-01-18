@@ -118,7 +118,7 @@ export class WechatUserService {
         user = this.wechatUserRepository.create({
           openid,
           phone: phoneNumber,
-          nickname: '叮当优+用户',
+          nickname: '智惠装用户',
           avatar:
             'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',
         });

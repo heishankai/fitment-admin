@@ -6,6 +6,7 @@ import { CraftsmanChatController } from './craftsman-chat.controller';
 import { CraftsmanChatRoom } from './entities/craftsman-chat-room.entity';
 import { CraftsmanChatMessage } from './entities/craftsman-chat-message.entity';
 import { CraftsmanUserModule } from '../craftsman-user/craftsman-user.module';
+import { AdminNotificationModule } from '../admin-notification/admin-notification.module';
 
 /**
  * 工匠聊天模块
@@ -16,6 +17,7 @@ import { CraftsmanUserModule } from '../craftsman-user/craftsman-user.module';
   imports: [
     TypeOrmModule.forFeature([CraftsmanChatRoom, CraftsmanChatMessage]),
     CraftsmanUserModule,
+    AdminNotificationModule,
   ],
   controllers: [CraftsmanChatController],
   providers: [CraftsmanChatGateway, CraftsmanChatService],

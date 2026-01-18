@@ -121,6 +121,14 @@ export class WstService {
             order: { createdAt: 'DESC' },
           });
 
+          const unreadCount = await this.chatMessageRepository.count({
+            where: {
+              chat_room_id: room.id,
+              read: false,
+              sender_type: 'wechat', // 只统计微信用户发送的未读消息
+            },
+          });
+
           return {
             id: room.id,
             wechat_user_id: room.wechat_user_id,
@@ -144,13 +152,8 @@ export class WstService {
                   createdAt: lastMessage.createdAt,
                 }
               : null,
-            unreadCount: await this.chatMessageRepository.count({
-              where: {
-                chat_room_id: room.id,
-                read: false,
-                sender_type: 'wechat', // 只统计微信用户发送的未读消息
-              },
-            }),
+            unreadCount,
+            hasUnread: unreadCount > 0, // 红点提示：是否有未读消息
             createdAt: room.createdAt,
             updatedAt: room.updatedAt,
           };
@@ -263,6 +266,9 @@ export class WstService {
       throw new HttpException('房间不存在', HttpStatus.NOT_FOUND);
     }
 
+    // 进入房间时，标记所有微信用户发送的消息为已读
+    await this.markRoomAsRead(roomId);
+
     const messages = await this.chatMessageRepository.find({
       where: { chat_room_id: roomId },
       order: { createdAt: 'ASC' }, // 正序排列
@@ -290,6 +296,9 @@ export class WstService {
     if (!room) {
       throw new HttpException('房间不存在', HttpStatus.NOT_FOUND);
     }
+
+    // 进入房间时，标记所有微信用户发送的消息为已读
+    await this.markRoomAsRead(roomId);
 
     const [messages, total] = await this.chatMessageRepository.findAndCount({
       where: { chat_room_id: roomId },

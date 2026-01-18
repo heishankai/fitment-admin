@@ -140,6 +140,11 @@ export class WalletTransactionService {
         query.andWhere('transaction.order_id = :order_id', { order_id });
       }
 
+      // 排除"申请提现中"的记录
+      query.andWhere('transaction.description != :withdrawPending', {
+        withdrawPending: '申请提现中',
+      });
+
       // 按创建时间倒序排列
       query.orderBy('transaction.createdAt', 'DESC');
 

@@ -1,4 +1,13 @@
-import { IsOptional, IsString, IsNumber, Min, Max, IsArray, ArrayMinSize, ArrayMaxSize } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsNumber,
+  Min,
+  Max,
+  IsArray,
+  ArrayMinSize,
+  ArrayMaxSize,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
@@ -37,6 +46,20 @@ export class QueryOrderDto {
   wechat_user_name?: string;
 
   /**
+   * 工匠用户手机号（精确匹配）
+   */
+  @IsOptional()
+  @IsString({ message: '工匠用户手机号必须是字符串' })
+  craftsman_user_phone?: string;
+
+  /**
+   * 微信用户手机号（精确匹配）
+   */
+  @IsOptional()
+  @IsString({ message: '微信用户手机号必须是字符串' })
+  wechat_user_phone?: string;
+
+  /**
    * 工种名称（模糊匹配，查询订单表中的 work_kind_name 字段）
    */
   @IsOptional()
@@ -72,7 +95,9 @@ export class QueryOrderDto {
   @IsArray({ message: '日期范围必须是数组' })
   @ArrayMinSize(2, { message: '日期范围数组必须包含2个元素' })
   @ArrayMaxSize(2, { message: '日期范围数组必须包含2个元素' })
-  @IsString({ each: true, message: '日期范围数组中的每个元素必须是字符串格式 YYYY-MM-DD' })
+  @IsString({
+    each: true,
+    message: '日期范围数组中的每个元素必须是字符串格式 YYYY-MM-DD',
+  })
   date_range?: string[];
 }
-

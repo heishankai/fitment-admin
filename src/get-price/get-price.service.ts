@@ -5,12 +5,14 @@ import { GetPrice } from './get-price.entity';
 import { CreateGetPriceDto } from './dto/create-get-price.dto';
 import { QueryGetPriceDto } from './dto/query-get-price.dto';
 import { UpdateGetPriceDto } from './dto/update-get-price.dto';
+import { AdminNotificationService } from '../admin-notification/admin-notification.service';
 
 @Injectable()
 export class GetPriceService {
   constructor(
     @InjectRepository(GetPrice)
     private readonly getPriceRepository: Repository<GetPrice>,
+    private readonly adminNotificationService: AdminNotificationService,
   ) {}
 
   /**
@@ -99,8 +101,32 @@ export class GetPriceService {
       // 创建新的获取报价记录
       const getPrice = this.getPriceRepository.create(createGetPriceDto);
 
-      // 保存到数据库并返回
-      return await this.getPriceRepository.save(getPrice);
+      // 保存到数据库
+      const savedGetPrice = await this.getPriceRepository.save(getPrice);
+
+      // 创建通知
+      try {
+        await this.adminNotificationService.create({
+          title: '新的获取报价请求',
+          content: `位置：${savedGetPrice.location}\n${savedGetPrice.houseTypeName} · ${savedGetPrice.area}㎡ · ${savedGetPrice.roomType}\n手机号：${savedGetPrice.phone}`,
+          notification_type: 'get-price',
+          notification_time: new Date().toISOString(),
+          is_read: false,
+          extra_data: {
+            getPriceId: savedGetPrice.id,
+            location: savedGetPrice.location,
+            houseTypeName: savedGetPrice.houseTypeName,
+            area: savedGetPrice.area,
+            roomType: savedGetPrice.roomType,
+            phone: savedGetPrice.phone,
+          },
+        });
+      } catch (error) {
+        // 通知创建失败不影响主流程
+        console.error('创建通知失败:', error);
+      }
+
+      return savedGetPrice;
     } catch (error) {
       throw new BadRequestException('创建获取报价失败: ' + error.message);
     }

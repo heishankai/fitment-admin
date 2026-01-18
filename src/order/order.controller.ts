@@ -63,20 +63,18 @@ export class OrderController {
       if (body.work_kind_name) {
         try {
           body.work_kind_name = decodeURIComponent(body.work_kind_name);
-          this.logger.log(
-            `订单工种名称已解码: ${body.work_kind_name}`,
-          );
+          this.logger.log(`订单工种名称已解码: ${body.work_kind_name}`);
         } catch (e) {
           // 如果解码失败，使用原始值
-          this.logger.log(
-            `订单工种名称无需解码: ${body.work_kind_name}`,
-          );
+          this.logger.log(`订单工种名称无需解码: ${body.work_kind_name}`);
         }
       }
 
       // 创建订单并匹配工匠
-      const { order, matchedCraftsmen } =
-        await this.orderService.createOrder(body, userId);
+      const { order, matchedCraftsmen } = await this.orderService.createOrder(
+        body,
+        userId,
+      );
 
       // 加载完整的订单信息（包含用户信息）
       const fullOrder = await this.orderService.findOne(order.id);
@@ -94,7 +92,7 @@ export class OrderController {
       this.logger.log(
         `HTTP接口创建订单 ${fullOrder.id}，匹配到 ${matchedCraftsmen.length} 个工匠`,
       );
-      
+
       try {
         await this.orderGateway.notifyMatchedCraftsmen(
           fullOrder,
@@ -305,10 +303,7 @@ export class OrderController {
         throw error;
       }
       this.logger.error('指派订单失败:', error);
-      throw new HttpException(
-        '指派订单失败',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('指派订单失败', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -335,7 +330,6 @@ export class OrderController {
       );
     }
   }
-
 
   /**
    * 添加工价数据
@@ -394,7 +388,9 @@ export class OrderController {
    * @returns null，由全局拦截器包装成标准响应
    */
   @Post('confirm-payment')
-  async confirmPayment(@Body(ValidationPipe) body: ConfirmPaymentDto): Promise<null> {
+  async confirmPayment(
+    @Body(ValidationPipe) body: ConfirmPaymentDto,
+  ): Promise<null> {
     try {
       return await this.orderService.confirmPayment(body);
     } catch (error) {
@@ -402,10 +398,7 @@ export class OrderController {
         throw error;
       }
       this.logger.error('确认支付失败:', error);
-      throw new HttpException(
-        '确认支付失败',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('确认支付失败', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -415,7 +408,9 @@ export class OrderController {
    * @returns null，由全局拦截器包装成标准响应
    */
   @Post('accept-work-price')
-  async acceptWorkPrice(@Body(ValidationPipe) body: AcceptWorkPriceDto): Promise<null> {
+  async acceptWorkPrice(
+    @Body(ValidationPipe) body: AcceptWorkPriceDto,
+  ): Promise<null> {
     try {
       return await this.orderService.acceptWorkPrice(body);
     } catch (error) {
@@ -423,10 +418,7 @@ export class OrderController {
         throw error;
       }
       this.logger.error('验收工价失败:', error);
-      throw new HttpException(
-        '验收工价失败',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('验收工价失败', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -436,7 +428,9 @@ export class OrderController {
    * @returns null，由全局拦截器包装成标准响应
    */
   @Post('accept-single-work-price')
-  async acceptSingleWorkPrice(@Body(ValidationPipe) body: AcceptSingleWorkPriceDto): Promise<null> {
+  async acceptSingleWorkPrice(
+    @Body(ValidationPipe) body: AcceptSingleWorkPriceDto,
+  ): Promise<null> {
     try {
       return await this.orderService.acceptSingleWorkPrice(body);
     } catch (error) {
@@ -450,7 +444,6 @@ export class OrderController {
       );
     }
   }
-
 
   /**
    * 确认工价项平台服务费支付
@@ -489,10 +482,7 @@ export class OrderController {
         throw error;
       }
       this.logger.error('取消订单失败:', error);
-      throw new HttpException(
-        '取消订单失败',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('取消订单失败', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -541,14 +531,34 @@ export class OrderController {
   }
 
   /**
+   * 调试接口：根据订单编号查询订单及其子订单
+   * @param orderNo 订单编号
+   * @returns 订单信息及其子订单列表
+   */
+  @Get('debug/order/:orderNo')
+  @Public()
+  async getOrderWithChildrenByOrderNo(@Param('orderNo') orderNo: string) {
+    try {
+      return await this.orderService.findOrderWithChildrenByOrderNo(orderNo);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('查询订单及其子订单失败:', error);
+      throw new HttpException(
+        '查询订单及其子订单失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
    * 管理员创建订单（可分配工长和工匠）
    * @param body 订单信息（包含wechatUserId）
    * @returns 创建的订单
    */
   @Post('admin')
-  async createOrderAdmin(
-    @Body(ValidationPipe) body: CreateOrderAdminDto,
-  ) {
+  async createOrderAdmin(@Body(ValidationPipe) body: CreateOrderAdminDto) {
     try {
       const order = await this.orderService.createOrderAdmin(body);
 
@@ -561,11 +571,7 @@ export class OrderController {
         throw error;
       }
       this.logger.error('管理员创建订单失败', error);
-      throw new HttpException(
-        '创建订单失败',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('创建订单失败', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }
-

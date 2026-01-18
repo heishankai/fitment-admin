@@ -156,6 +156,13 @@ export class CraftsmanChatService {
                 sender_type: 'craftsman', // 只统计工匠用户发送的未读消息
               },
             }),
+            hasUnread: (await this.chatMessageRepository.count({
+              where: {
+                chat_room_id: room.id,
+                read: false,
+                sender_type: 'craftsman', // 只统计工匠用户发送的未读消息
+              },
+            })) > 0, // 红点提示：是否有未读消息
             createdAt: room.createdAt,
             updatedAt: room.updatedAt,
           };
@@ -269,6 +276,9 @@ export class CraftsmanChatService {
       throw new HttpException('房间不存在', HttpStatus.NOT_FOUND);
     }
 
+    // 进入房间时，标记所有工匠用户发送的消息为已读
+    await this.markRoomAsRead(roomId);
+
     const messages = await this.chatMessageRepository.find({
       where: { chat_room_id: roomId },
       order: { createdAt: 'ASC' }, // 正序排列
@@ -296,6 +306,9 @@ export class CraftsmanChatService {
     if (!room) {
       throw new HttpException('房间不存在', HttpStatus.NOT_FOUND);
     }
+
+    // 进入房间时，标记所有工匠用户发送的消息为已读
+    await this.markRoomAsRead(roomId);
 
     const [messages, total] =
       await this.chatMessageRepository.findAndCount({

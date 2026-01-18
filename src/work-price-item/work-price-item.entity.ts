@@ -131,7 +131,9 @@ export class WorkPriceItem {
     // 确保类型转换正确：quantity 和 work_price 可能是字符串或数字
     const quantityNum = Number(this.quantity) || 0;
     const workPriceNum = Number(this.work_price) || 0;
-    const minimumPriceNum = this.minimum_price ? parseFloat(String(this.minimum_price)) : null;
+    const minimumPriceNum = this.minimum_price
+      ? parseFloat(String(this.minimum_price))
+      : null;
 
     if (
       this.is_set_minimum_price === '1' &&
@@ -151,7 +153,8 @@ export class WorkPriceItem {
   calculateServiceFee(): number {
     // 只有子工价（work_group_id > 1）才计算平台服务费
     if (this.work_group_id && this.work_group_id > 1) {
-      const settlementAmount = this.settlement_amount || this.calculateSettlementAmount();
+      const settlementAmount =
+        this.settlement_amount || this.calculateSettlementAmount();
       return Number((settlementAmount * 0.1).toFixed(2));
     }
     return 0;
