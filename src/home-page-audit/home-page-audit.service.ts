@@ -362,6 +362,7 @@ export class HomePageAuditService {
       // 检查用户是否存在
       const user = await this.craftsmanUserRepository.findOne({
         where: { id: userId },
+        cache: false,
       });
 
       if (!user) {
@@ -369,9 +370,14 @@ export class HomePageAuditService {
       }
 
       // 更新用户的 isHomePageVerified 状态为 true
-      await this.craftsmanUserRepository.update(userId, {
+      const updateResult = await this.craftsmanUserRepository.update(userId, {
         isHomePageVerified: true,
       });
+
+      // 验证更新是否成功
+      if (updateResult.affected === 0) {
+        throw new BadRequestException('更新用户个人主页审核状态失败');
+      }
 
       // 创建系统通知
       await this.notificationService.create({
@@ -406,6 +412,7 @@ export class HomePageAuditService {
       // 检查用户是否存在
       const user = await this.craftsmanUserRepository.findOne({
         where: { id: userId },
+        cache: false,
       });
 
       if (!user) {
@@ -413,9 +420,14 @@ export class HomePageAuditService {
       }
 
       // 更新用户的 isHomePageVerified 状态为 false
-      await this.craftsmanUserRepository.update(userId, {
+      const updateResult = await this.craftsmanUserRepository.update(userId, {
         isHomePageVerified: false,
       });
+
+      // 验证更新是否成功
+      if (updateResult.affected === 0) {
+        throw new BadRequestException('更新用户个人主页审核状态失败');
+      }
 
       // 创建系统通知
       const notificationContent = reason

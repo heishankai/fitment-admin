@@ -93,7 +93,7 @@ export class WorkPriceItem {
       from: (value: string | null) => (value ? parseFloat(value) : null),
     },
   })
-  settlement_amount: number; // 结算结果（如果 is_set_minimum_price === '1' && quantity === 1 && work_price < minimum_price，使用 minimum_price，否则使用 work_price * quantity）
+  settlement_amount: number; // 结算结果（如果 is_set_minimum_price === '1' && work_price * quantity < minimum_price，使用 minimum_price，否则使用 work_price * quantity）
 
   @Column({ type: 'varchar', length: 20 })
   created_by: string; // 工价来源 'gangmaster' | 'craftsman'
@@ -124,7 +124,7 @@ export class WorkPriceItem {
 
   /**
    * 计算结算金额
-   * 如果 is_set_minimum_price === '1' && quantity === 1 && work_price < minimum_price，使用 minimum_price
+   * 如果 is_set_minimum_price === '1' && work_price * quantity < minimum_price，使用 minimum_price
    * 否则使用 work_price * quantity
    */
   calculateSettlementAmount(): number {
@@ -135,15 +135,18 @@ export class WorkPriceItem {
       ? parseFloat(String(this.minimum_price))
       : null;
 
+    // 计算单价 × 数量
+    const totalPrice = workPriceNum * quantityNum;
+
+    // 如果设置了最低价，且计算结果低于最低价，则使用最低价
     if (
       this.is_set_minimum_price === '1' &&
-      quantityNum === 1 &&
       minimumPriceNum !== null &&
-      workPriceNum < minimumPriceNum
+      totalPrice < minimumPriceNum
     ) {
       return minimumPriceNum;
     }
-    return workPriceNum * quantityNum;
+    return totalPrice;
   }
 
   /**

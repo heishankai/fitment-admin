@@ -2,6 +2,8 @@ import {
   Injectable,
   HttpException,
   HttpStatus,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
@@ -15,6 +17,7 @@ import { Order } from '../order/order.entity';
 import { OrderStatus } from '../order/order.entity';
 import { PlatformIncomeRecordService } from '../platform-income-record/platform-income-record.service';
 import { CostType } from '../platform-income-record/platform-income-record.entity';
+import { OrderService } from '../order/order.service';
 
 @Injectable()
 export class MaterialsService {
@@ -24,6 +27,8 @@ export class MaterialsService {
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
     private readonly platformIncomeRecordService: PlatformIncomeRecordService,
+    @Inject(forwardRef(() => OrderService))
+    private readonly orderService: OrderService,
   ) {}
 
   /**
@@ -228,7 +233,12 @@ export class MaterialsService {
 
       // 8. 注意：平台收支记录已在确认支付时创建，验收时不再重复创建
 
-      // 9. 返回null，全局拦截器会自动包装成标准响应
+      // 9. 验收辅材后，检查订单是否完成
+      const orderId = materials.orderId;
+      console.log(`验收辅材 ${acceptDto.materialsId} 成功，检查订单 ${orderId} 是否完成...`);
+      await this.orderService.handleOrderCompletionAfterAcceptance(orderId);
+
+      // 10. 返回null，全局拦截器会自动包装成标准响应
       return null;
     } catch (error) {
       if (error instanceof HttpException) {
@@ -448,7 +458,7 @@ export class MaterialsService {
           continue;
         }
 
-        // 检查是否已付款
+        // 检查是否已付款（新增：全部必须已支付）
         if (material.is_paid !== true) {
           invalidMaterials.push(
             `辅材ID ${material.id}: 辅材尚未付款，无法验收`,
@@ -490,7 +500,19 @@ export class MaterialsService {
 
       await this.materialsRepository.save(validMaterials);
 
-      // 8. 返回null，全局拦截器会自动包装成标准响应
+      // 8. 验收所有辅材后，检查所有受影响的订单是否完成
+      const affectedOrderIds = [...new Set(validMaterials.map((m) => m.orderId))];
+      console.log(`批量验收辅材完成，检查 ${affectedOrderIds.length} 个订单是否完成...`);
+      
+      for (const orderId of affectedOrderIds) {
+        try {
+          await this.orderService.handleOrderCompletionAfterAcceptance(orderId);
+        } catch (error) {
+          console.error(`检查订单 ${orderId} 完成状态失败:`, error);
+        }
+      }
+
+      // 9. 返回null，全局拦截器会自动包装成标准响应
       return null;
     } catch (error) {
       if (error instanceof HttpException) {
@@ -499,6 +521,118 @@ export class MaterialsService {
       console.error('一键验收辅材失败:', error);
       throw new HttpException(
         '一键验收辅材失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 一键验收：按订单ID验收该订单下的所有辅材（必须全部已支付）
+   * @param orderId 订单ID
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  async batchAcceptByOrderId(orderId: number): Promise<null> {
+    try {
+      // 1. 查找订单
+      const order = await this.orderRepository.findOne({
+        where: { id: orderId },
+      });
+
+      if (!order) {
+        throw new HttpException('订单不存在', HttpStatus.NOT_FOUND);
+      }
+
+      // 2. 检查订单是否已取消
+      if (order.order_status === OrderStatus.CANCELLED) {
+        throw new HttpException(
+          '订单已取消，无法进行验收操作',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 3. 查找该订单下所有辅材
+      const allMaterials = await this.materialsRepository.find({
+        where: {
+          orderId: orderId,
+        },
+        relations: ['order'],
+      });
+
+      if (!allMaterials || allMaterials.length === 0) {
+        throw new HttpException(
+          '该订单下没有辅材',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 4. 检查所有辅材是否已支付
+      const unpaidMaterials = allMaterials.filter((m) => !m.is_paid);
+      if (unpaidMaterials.length > 0) {
+        throw new HttpException(
+          `有 ${unpaidMaterials.length} 个辅材尚未支付，无法验收。请先完成所有辅材的支付。`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 5. 分离验收条件
+      const invalidMaterials: string[] = [];
+      const validMaterials: Materials[] = [];
+
+      for (const material of allMaterials) {
+        // 验证订单是否有接单的工匠
+        if (!material.order.craftsman_user_id) {
+          invalidMaterials.push(
+            `辅材ID ${material.id}: 订单尚未接单，无法验收`,
+          );
+          continue;
+        }
+
+        // 检查是否已经验收过
+        if (material.is_accepted === true) {
+          console.log(`辅材ID ${material.id}: 已经验收过，跳过`);
+          continue; // 跳过已验收的，不影响其他辅材验收
+        }
+
+        validMaterials.push(material);
+      }
+
+      // 6. 如果有验收错误（除了已验收），返回错误信息
+      if (invalidMaterials.length > 0) {
+        throw new HttpException(
+          invalidMaterials.join('; '),
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 7. 如果没有需要验收的辅材
+      if (validMaterials.length === 0) {
+        throw new HttpException(
+          '该订单的所有辅材都已验收或不需要验收',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 8. 批量更新验收状态
+      validMaterials.forEach((material) => {
+        material.is_accepted = true;
+      });
+
+      await this.materialsRepository.save(validMaterials);
+
+      console.log(`订单 ${orderId} 一键验收 ${validMaterials.length} 个辅材成功`);
+
+      // 9. 验收辅材后，检查订单是否完成
+      await this.orderService.handleOrderCompletionAfterAcceptance(orderId);
+
+      // 10. 返回null，全局拦截器会自动包装成标准响应
+      return null;
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      console.error('按订单ID一键验收辅材失败:', error);
+      throw new HttpException(
+        '按订单ID一键验收辅材失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

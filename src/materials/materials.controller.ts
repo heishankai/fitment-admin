@@ -159,4 +159,26 @@ export class MaterialsController {
       );
     }
   }
+
+  /**
+   * 一键验收：按订单ID验收该订单下的所有辅材（必须全部已支付）
+   * @param orderId 订单ID
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  @Post('batch-accept-by-order/:orderId')
+  async batchAcceptByOrder(
+    @Param('orderId', ParseIntPipe) orderId: number,
+  ): Promise<null> {
+    try {
+      return await this.materialsService.batchAcceptByOrderId(orderId);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '按订单ID一键验收辅材失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 }

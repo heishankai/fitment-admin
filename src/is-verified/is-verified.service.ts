@@ -377,6 +377,7 @@ export class IsVerifiedService {
       // 检查用户是否存在
       const user = await this.craftsmanUserRepository.findOne({
         where: { id: userId },
+        cache: false,
       });
 
       if (!user) {
@@ -384,9 +385,14 @@ export class IsVerifiedService {
       }
 
       // 更新用户的 isVerified 状态为 true
-      await this.craftsmanUserRepository.update(userId, {
+      const updateResult = await this.craftsmanUserRepository.update(userId, {
         isVerified: true,
       });
+
+      // 验证更新是否成功
+      if (updateResult.affected === 0) {
+        throw new BadRequestException('更新用户实名认证状态失败');
+      }
 
       // 创建系统通知
       await this.notificationService.create({
@@ -421,6 +427,7 @@ export class IsVerifiedService {
       // 检查用户是否存在
       const user = await this.craftsmanUserRepository.findOne({
         where: { id: userId },
+        cache: false,
       });
 
       if (!user) {
@@ -428,9 +435,14 @@ export class IsVerifiedService {
       }
 
       // 更新用户的 isVerified 状态为 false
-      await this.craftsmanUserRepository.update(userId, {
+      const updateResult = await this.craftsmanUserRepository.update(userId, {
         isVerified: false,
       });
+
+      // 验证更新是否成功
+      if (updateResult.affected === 0) {
+        throw new BadRequestException('更新用户实名认证状态失败');
+      }
 
       // 创建系统通知
       const notificationContent = reason

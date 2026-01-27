@@ -370,6 +370,7 @@ export class IsSkillVerifiedService {
       // 检查用户是否存在
       const user = await this.craftsmanUserRepository.findOne({
         where: { id: userId },
+        cache: false,
       });
 
       if (!user) {
@@ -377,9 +378,14 @@ export class IsSkillVerifiedService {
       }
 
       // 更新用户的 isSkillVerified 状态为 true
-      await this.craftsmanUserRepository.update(userId, {
+      const updateResult = await this.craftsmanUserRepository.update(userId, {
         isSkillVerified: true,
       });
+
+      // 验证更新是否成功
+      if (updateResult.affected === 0) {
+        throw new BadRequestException('更新用户技能认证状态失败');
+      }
 
       // 创建系统通知
       await this.notificationService.create({
@@ -414,6 +420,7 @@ export class IsSkillVerifiedService {
       // 检查用户是否存在
       const user = await this.craftsmanUserRepository.findOne({
         where: { id: userId },
+        cache: false,
       });
 
       if (!user) {
@@ -421,9 +428,14 @@ export class IsSkillVerifiedService {
       }
 
       // 更新用户的 isSkillVerified 状态为 false
-      await this.craftsmanUserRepository.update(userId, {
+      const updateResult = await this.craftsmanUserRepository.update(userId, {
         isSkillVerified: false,
       });
+
+      // 验证更新是否成功
+      if (updateResult.affected === 0) {
+        throw new BadRequestException('更新用户技能认证状态失败');
+      }
 
       // 创建系统通知
       const notificationContent = reason

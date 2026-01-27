@@ -1,11 +1,12 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, IsNull } from 'typeorm';
 import { Order, OrderStatus } from './order.entity';
 import { CraftsmanUser } from '../craftsman-user/craftsman-user.entity';
 import { IsSkillVerified } from '../is-skill-verified/is-skill-verified.entity';
 import { WechatUser } from '../wechat-user/wechat-user.entity';
 import { WorkPriceItem } from '../work-price-item/work-price-item.entity';
+import { Materials } from '../materials/materials.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CreateOrderAdminDto } from './dto/create-order-admin.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
@@ -15,7 +16,7 @@ import { AcceptWorkPriceDto } from './dto/accept-work-price.dto';
 import { AcceptSingleWorkPriceDto } from './dto/accept-single-work-price.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { ConfirmWorkPriceServiceFeeDto } from './dto/confirm-work-price-service-fee.dto';
-import { ORDER_MATCH_CONFIG } from '../common/constants/app.constants';
+import { ORDER_MATCH_CONFIG, DEPOSIT_FREEZE_CONFIG } from '../common/constants/app.constants';
 import { BadRequestException } from '@nestjs/common';
 import { WalletService } from '../wallet/wallet.service';
 import { WalletTransactionService } from '../wallet-transaction/wallet-transaction.service';
@@ -186,6 +187,8 @@ async function generateOrderNo(
 
 @Injectable()
 export class OrderService {
+  private readonly logger = new Logger(OrderService.name);
+
   constructor(
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
@@ -197,6 +200,8 @@ export class OrderService {
     private readonly wechatUserRepository: Repository<WechatUser>,
     @InjectRepository(WorkPriceItem)
     private readonly workPriceItemRepository: Repository<WorkPriceItem>,
+    @InjectRepository(Materials)
+    private readonly materialsRepository: Repository<Materials>,
     private readonly walletService: WalletService,
     private readonly walletTransactionService: WalletTransactionService,
     private readonly platformIncomeRecordService: PlatformIncomeRecordService,
@@ -479,11 +484,12 @@ export class OrderService {
         console.log(`工种名称无需解码: ${workKindName}`);
       }
 
-      // 1. 查询所有有位置信息且技能认证通过的工匠
+      // 1. 查询所有有位置信息且完成实名认证和技能认证的工匠
       const craftsmen = await this.craftsmanUserRepository
         .createQueryBuilder('craftsman')
         .where('craftsman.latitude IS NOT NULL')
         .andWhere('craftsman.longitude IS NOT NULL')
+        .andWhere('craftsman.isVerified = :isVerified', { isVerified: true })
         .andWhere('craftsman.isSkillVerified = :isSkillVerified', { isSkillVerified: true })
         .getMany();
 
@@ -513,8 +519,8 @@ export class OrderService {
           continue;
         }
         
-        // 确保技能认证已通过（双重检查，虽然查询时已过滤，但为了安全再加一次）
-        if (craftsman.isSkillVerified !== true) {
+        // 确保实名认证和技能认证都已通过（双重检查，虽然查询时已过滤，但为了安全再加一次）
+        if (craftsman.isVerified !== true || craftsman.isSkillVerified !== true) {
           continue;
         }
 
@@ -643,6 +649,30 @@ export class OrderService {
         );
       }
 
+      // 2.1 验证工匠是否已完成实名认证
+      const craftsman = await this.craftsmanUserRepository.findOne({
+        where: { id: craftsmanUserId },
+      });
+
+      if (!craftsman) {
+        throw new HttpException('工匠不存在', HttpStatus.NOT_FOUND);
+      }
+
+      if (!craftsman.isVerified) {
+        throw new HttpException(
+          '您未完成实名认证，无法接单',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 2.2 验证工匠是否已完成技能认证
+      if (!craftsman.isSkillVerified) {
+        throw new HttpException(
+          '您未完成技能认证，无法接单',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
       // 3. 更新订单状态
       order.order_status = OrderStatus.ACCEPTED;
       order.order_status_name = ORDER_STATUS_MAP[OrderStatus.ACCEPTED];
@@ -695,6 +725,15 @@ export class OrderService {
 
       if (!craftsman) {
         throw new HttpException('工匠不存在', HttpStatus.NOT_FOUND);
+      }
+
+      // 3.1 验证工匠是否已完成实名认证和技能认证（静默验证，不提示）
+      if (!craftsman.isVerified || !craftsman.isSkillVerified) {
+        // 静默返回失败，不显示具体原因
+        throw new HttpException(
+          '派单失败',
+          HttpStatus.BAD_REQUEST,
+        );
       }
 
       // 4. 更新订单状态和指派工匠
@@ -1064,9 +1103,9 @@ export class OrderService {
   }
 
   /**
-   * 获取工匠的订单列表（包括匹配到的待接单订单和已分配给该工匠的订单）
+   * 获取工匠的订单列表（只返回待接单的订单）
    * @param craftsmanUserId 工匠用户ID
-   * @returns 订单列表
+   * @returns 待接单订单列表
    */
   async getCraftsmanOrders(craftsmanUserId: number): Promise<Order[]> {
     // 1. 获取工匠信息（需要位置和技能信息）
@@ -1080,35 +1119,17 @@ export class OrderService {
 
     // 检查工匠是否通过技能认证
     if (craftsman.isSkillVerified !== true) {
-      console.log(`⚠️  工匠 ${craftsmanUserId} 未通过技能认证，不返回匹配的待接单订单`);
-      // 只返回已分配给该工匠的订单，不返回匹配的待接单订单
-      const assignedOrders = await this.orderRepository.find({
-        where: { craftsman_user_id: craftsmanUserId },
-        relations: ['wechat_user', 'craftsman_user'],
-        order: { createdAt: 'DESC' },
-      });
-      return assignedOrders.map((order) => this.normalizeOrderWorkPrices(order));
+      console.log(`⚠️  工匠 ${craftsmanUserId} 未通过技能认证，无法获取待接单订单`);
+      // 返回空列表
+      return [];
     }
 
-    // 2. 获取所有待接单的订单（order_status = 1），排除已分配给该工匠的订单
-    const assignedOrders = await this.orderRepository.find({
-      where: { craftsman_user_id: craftsmanUserId },
-      select: ['id'],
-    });
-
-    const assignedOrderIds = assignedOrders.map((o) => o.id);
+    // 2. 获取所有待接单的订单（order_status = 1）
     let pendingOrdersQuery = this.orderRepository
       .createQueryBuilder('order')
       .where('order.order_status = :status', { status: OrderStatus.PENDING })
       .leftJoinAndSelect('order.wechat_user', 'wechat_user')
       .orderBy('order.createdAt', 'DESC');
-
-    if (assignedOrderIds.length > 0) {
-      pendingOrdersQuery = pendingOrdersQuery.andWhere(
-        'order.id NOT IN (:...assignedIds)',
-        { assignedIds: assignedOrderIds },
-      );
-    }
 
     const pendingOrders = await pendingOrdersQuery.getMany();
 
@@ -1667,8 +1688,11 @@ export class OrderService {
           // 工匠订单，有父订单
           craftsmanOrders.push(order);
         } else {
-          // 其他类型的订单，直接添加到工长订单列表
-          gangmasterOrders.push(order);
+          // 其他类型的订单或没有 parent_order_id 的工匠订单，直接添加到工长订单列表
+          gangmasterOrders.push({
+            ...order,
+            children: [],
+          });
         }
       });
 
@@ -1708,6 +1732,10 @@ export class OrderService {
           (o) => o.id === craftsmanOrder.parent_order_id,
         );
         if (parentOrder) {
+          // 确保 children 数组存在
+          if (!parentOrder.children || !Array.isArray(parentOrder.children)) {
+            parentOrder.children = [];
+          }
           // 检查是否已经存在（避免重复）
           const exists = parentOrder.children.some(
             (child: any) => child.id === craftsmanOrder.id,
@@ -1749,6 +1777,10 @@ export class OrderService {
             (o) => o.id === craftsmanOrder.parent_order_id,
           );
           if (parentOrder) {
+            // 确保 children 数组存在
+            if (!parentOrder.children || !Array.isArray(parentOrder.children)) {
+              parentOrder.children = [];
+            }
             // 检查是否已经存在（避免重复）
             const exists = parentOrder.children.some(
               (child: any) => child.id === craftsmanOrder.id,
@@ -2194,45 +2226,61 @@ export class OrderService {
             }
           }
 
-          // 工长工费：前两次符合条件的验收每次打款25%
+          // 工长工费：每次验收水电或泥工时，检查整个订单中该工种是否都已验收，如果都验收了且还没打款过，打款25%
           const gangmasterCost = workPrice.gangmaster_cost || 0;
           if (gangmasterCost > 0) {
-            // 查询所有已验收的泥工或水电工价项（包括当前验收的这个）
-            const allWorkItems = await this.workPriceItemRepository.find({
-              where: { order_id: order_id },
-            });
+            // 获取当前验收的工价项工种
+            const currentWorkItem = workPrice.prices_list[prices_item];
+            const workKindName = currentWorkItem?.work_kind_name;
 
-            const acceptedTilerOrPlumbingItems = allWorkItems.filter(
-              (item) =>
-                (item.work_kind_name === '泥工' || item.work_kind_name === '水电') &&
-                item.is_accepted === true,
-            );
-
-            // 只在前两次符合条件的验收时打款25%
-            if (acceptedTilerOrPlumbingItems.length <= 2) {
-              const amount = gangmasterCost * 0.25;
-              console.log(
-                `验收单项 ${prices_item}，第 ${acceptedTilerOrPlumbingItems.length} 次符合条件的验收，打款工长费用25%: ${amount}`,
+            // 只处理水电或泥工
+            if (workKindName === '水电' || workKindName === '泥工') {
+              // 检查订单中所有该工种的工价项是否都已验收
+              const allWorkKindAccepted = await this.checkWorkKindAllAccepted(
+                order_id,
+                workKindName,
               );
-              await this.walletService.addBalance(craftsmanUserId, amount);
-              
-              // 创建账户明细：订单逻辑验收中（收入）
-              try {
-                await this.walletTransactionService.create({
-                  craftsman_user_id: craftsmanUserId,
-                  amount,
-                  type: WalletTransactionType.INCOME,
-                  description: '订单验收',
-                  order_id: order_id.toString(),
-                });
-              } catch (error) {
-                console.error('创建账户明细失败:', error);
-                // 不影响验收流程，只记录错误
+
+              if (allWorkKindAccepted) {
+                // 检查是否已经为该工种打款过25%
+                const hasPaid = await this.hasPaidWorkKind25Percent(
+                  order_id,
+                  craftsmanUserId,
+                  gangmasterCost,
+                  workKindName,
+                );
+
+                if (!hasPaid) {
+                  // 打款25%工长费用
+                  const amount = gangmasterCost * 0.25;
+                  console.log(
+                    `验收单项 ${prices_item}（${workKindName}），订单中所有${workKindName}工价项都已验收，打款工长费用25%: ${amount}`,
+                  );
+                  await this.walletService.addBalance(craftsmanUserId, amount);
+                  
+                  // 创建账户明细：订单逻辑验收中（收入）
+                  try {
+                    await this.walletTransactionService.create({
+                      craftsman_user_id: craftsmanUserId,
+                      amount,
+                      type: WalletTransactionType.INCOME,
+                      description: `订单验收（工长费用-${workKindName}）`,
+                      order_id: order_id.toString(),
+                    });
+                  } catch (error) {
+                    console.error('创建账户明细失败:', error);
+                    // 不影响验收流程，只记录错误
+                  }
+                } else {
+                  console.log(
+                    `验收单项 ${prices_item}（${workKindName}），订单中所有${workKindName}工价项都已验收，但已打款过25%，不再打款`,
+                  );
+                }
+              } else {
+                console.log(
+                  `验收单项 ${prices_item}（${workKindName}），订单中还有${workKindName}工价项未验收，暂不打款`,
+                );
               }
-            } else {
-              console.log(
-                `验收单项 ${prices_item}，第 ${acceptedTilerOrPlumbingItems.length} 次符合条件的验收，不打款（前两次已打款50%）`,
-              );
             }
           }
 
@@ -2241,29 +2289,36 @@ export class OrderService {
           console.log(`订单 ${order_id} 验收单项 ${prices_item} 后，订单完成状态: ${isCompleted}`);
           if (isCompleted) {
             console.log(`订单 ${order_id} 已完成，准备扣除质保金`);
-            // 订单完成时，计算并打款剩余的50%工长费用（前两次已打款50%）
+            // 订单完成时，计算并打款剩余的工长费用
             const gangmasterCost = workPrice.gangmaster_cost || 0;
             if (gangmasterCost > 0 && isForeman) {
-              // 查询所有已验收的泥工或水电工价项
-              const allWorkItems = await this.workPriceItemRepository.find({
-                where: { order_id: order_id },
+              // 查询该订单的工长费用打款记录
+              const queryResult = await this.walletTransactionService.getTransactions({
+                craftsman_user_id: craftsmanUserId,
+                order_id: order_id.toString(),
+                type: WalletTransactionType.INCOME,
               });
 
-              const acceptedTilerOrPlumbingItems = allWorkItems.filter(
-                (item) =>
-                  (item.work_kind_name === '泥工' || item.work_kind_name === '水电') &&
-                  item.is_accepted === true,
-              );
+              let paidAmount = 0;
+              if (queryResult.success && queryResult.data) {
+                // 计算已支付的工长费用（25%的打款记录）
+                const transactions = queryResult.data;
+                const expectedAmount25 = gangmasterCost * 0.25;
+                const paidTransactions = transactions.filter(
+                  (tx) =>
+                    Math.abs(Number(tx.amount) - expectedAmount25) < 0.01 &&
+                    (tx.description?.includes('订单验收（工长费用') ||
+                      tx.description?.includes('订单验收')),
+                );
+                paidAmount = paidTransactions.length * expectedAmount25;
+              }
 
-              // 计算已经支付的工长费用（前两次每次25%，共50%）
-              const paidAmount = Math.min(acceptedTilerOrPlumbingItems.length, 2) * gangmasterCost * 0.25;
-
-              // 剩余需要支付的工长费用（50%）
+              // 剩余需要支付的工长费用
               const remainingAmount = gangmasterCost - paidAmount;
 
               if (remainingAmount > 0) {
-                // 订单完成时打款剩余50%
-                console.log(`订单 ${order_id} 完成，打款剩余50%工长费用: ${remainingAmount}（已支付: ${paidAmount}）`);
+                // 订单完成时打款剩余部分
+                console.log(`订单 ${order_id} 完成，打款剩余工长费用: ${remainingAmount}（已支付: ${paidAmount}，总额: ${gangmasterCost}）`);
                 await this.walletService.addBalance(craftsmanUserId, remainingAmount);
                 
                 // 创建账户明细
@@ -2278,6 +2333,8 @@ export class OrderService {
                 } catch (error) {
                   console.error('创建账户明细失败:', error);
                 }
+              } else {
+                console.log(`订单 ${order_id} 完成，工长费用已全部支付（已支付: ${paidAmount}，总额: ${gangmasterCost}）`);
               }
             }
 
@@ -2335,29 +2392,36 @@ export class OrderService {
             console.log(`订单 ${order_id} 验收整个工价单后，订单完成状态: ${isCompleted}`);
             if (isCompleted) {
               console.log(`订单 ${order_id} 已完成，准备扣除质保金`);
-              // 订单真正完成时，才打款剩余的50%工长费用（前两次已打款50%）
+              // 订单真正完成时，才打款剩余的工长费用
               const gangmasterCost = workPrice.gangmaster_cost || 0;
               if (gangmasterCost > 0) {
-                // 查询所有已验收的泥工或水电工价项
-                const allWorkItems = await this.workPriceItemRepository.find({
-                  where: { order_id: order_id },
+                // 查询该订单的工长费用打款记录
+                const queryResult = await this.walletTransactionService.getTransactions({
+                  craftsman_user_id: craftsmanUserId,
+                  order_id: order_id.toString(),
+                  type: WalletTransactionType.INCOME,
                 });
 
-                const acceptedTilerOrPlumbingItems = allWorkItems.filter(
-                  (item) =>
-                    (item.work_kind_name === '泥工' || item.work_kind_name === '水电') &&
-                    item.is_accepted === true,
-                );
+                let paidAmount = 0;
+                if (queryResult.success && queryResult.data) {
+                  // 计算已支付的工长费用（25%的打款记录）
+                  const transactions = queryResult.data;
+                  const expectedAmount25 = gangmasterCost * 0.25;
+                  const paidTransactions = transactions.filter(
+                    (tx) =>
+                      Math.abs(Number(tx.amount) - expectedAmount25) < 0.01 &&
+                      (tx.description?.includes('订单验收（工长费用') ||
+                        tx.description?.includes('订单验收')),
+                  );
+                  paidAmount = paidTransactions.length * expectedAmount25;
+                }
 
-                // 计算已经支付的工长费用（前两次每次25%，共50%）
-                const paidAmount = Math.min(acceptedTilerOrPlumbingItems.length, 2) * gangmasterCost * 0.25;
-
-                // 剩余需要支付的工长费用（50%）
+                // 剩余需要支付的工长费用
                 const remainingAmount = gangmasterCost - paidAmount;
 
                 if (remainingAmount > 0) {
-                  // 订单完成时打款剩余50%
-                  console.log(`订单 ${order_id} 完成，打款剩余50%工长费用: ${remainingAmount}（已支付: ${paidAmount}）`);
+                  // 订单完成时打款剩余部分
+                  console.log(`订单 ${order_id} 完成，打款剩余工长费用: ${remainingAmount}（已支付: ${paidAmount}，总额: ${gangmasterCost}）`);
                   await this.walletService.addBalance(craftsmanUserId, remainingAmount);
                   
                   // 创建账户明细
@@ -2372,6 +2436,8 @@ export class OrderService {
                   } catch (error) {
                     console.error('创建账户明细失败:', error);
                   }
+                } else {
+                  console.log(`订单 ${order_id} 完成，工长费用已全部支付（已支付: ${paidAmount}，总额: ${gangmasterCost}）`);
                 }
               }
 
@@ -2529,6 +2595,78 @@ export class OrderService {
           }
         }
 
+        // 如果是工长订单，检查子工价单中是否包含水电或泥工，如果包含，检查整个订单中该工种是否都已验收
+        const isForeman = order.work_prices?.[0]?.craftsman_user_work_kind_name === '工长';
+        if (isForeman && subWorkPrice.prices_list && subWorkPrice.prices_list.length > 0) {
+          // 检查子工价单中是否包含水电或泥工
+          const hasTilerOrPlumbing = subWorkPrice.prices_list.some(
+            (item: any) => item.work_kind_name === '泥工' || item.work_kind_name === '水电',
+          );
+
+          if (hasTilerOrPlumbing) {
+            // 检查子工价单中的水电和泥工
+            const workKinds = new Set<string>();
+            subWorkPrice.prices_list.forEach((item: any) => {
+              if (item.work_kind_name === '泥工' || item.work_kind_name === '水电') {
+                workKinds.add(item.work_kind_name);
+              }
+            });
+
+            // 对每个工种类型进行检查
+            for (const workKindName of workKinds) {
+              // 检查订单中所有该工种的工价项是否都已验收
+              const allWorkKindAccepted = await this.checkWorkKindAllAccepted(
+                order_id,
+                workKindName as '水电' | '泥工',
+              );
+
+              if (allWorkKindAccepted) {
+                // 获取工长费用
+                const gangmasterCost = order.work_prices?.[0]?.gangmaster_cost || 0;
+                if (gangmasterCost > 0) {
+                  // 检查是否已经为该工种打款过25%
+                  const hasPaid = await this.hasPaidWorkKind25Percent(
+                    order_id,
+                    craftsmanUserId,
+                    gangmasterCost,
+                    workKindName as '水电' | '泥工',
+                  );
+
+                  if (!hasPaid) {
+                    // 打款25%工长费用
+                    const amount = gangmasterCost * 0.25;
+                    console.log(
+                      `验收子工价单 ${prices_item}（包含${workKindName}），订单中所有${workKindName}工价项都已验收，打款工长费用25%: ${amount}`,
+                    );
+                    await this.walletService.addBalance(craftsmanUserId, amount);
+                    
+                    // 创建账户明细
+                    try {
+                      await this.walletTransactionService.create({
+                        craftsman_user_id: craftsmanUserId,
+                        amount,
+                        type: WalletTransactionType.INCOME,
+                        description: `订单验收（工长费用-${workKindName}）`,
+                        order_id: order_id.toString(),
+                      });
+                    } catch (error) {
+                      console.error('创建账户明细失败:', error);
+                    }
+                  } else {
+                    console.log(
+                      `验收子工价单 ${prices_item}（包含${workKindName}），订单中所有${workKindName}工价项都已验收，但已打款过25%，不再打款`,
+                    );
+                  }
+                }
+              } else {
+                console.log(
+                  `验收子工价单 ${prices_item}（包含${workKindName}），订单中还有${workKindName}工价项未验收，暂不打款`,
+                );
+              }
+            }
+          }
+        }
+
         // 注意：子工价单验收不会完成订单，只有 work_prices[0] 的 total_is_accepted 验收才会完成订单
       } else {
         throw new HttpException(
@@ -2583,10 +2721,32 @@ export class OrderService {
       // 2. 验证工匠是否存在
       const craftsman = await this.craftsmanUserRepository.findOne({
         where: { id: craftsman_id },
+        // 禁用缓存以确保获取最新的数据
+        cache: false,
       });
 
       if (!craftsman) {
         throw new HttpException('工匠不存在', HttpStatus.NOT_FOUND);
+      }
+
+      // 2.1 验证工匠是否已完成实名认证
+      if (!craftsman.isVerified) {
+        throw new HttpException(
+          '该工匠未完成实名认证，无法分配订单',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 2.2 验证工匠是否已完成技能认证
+      if (!craftsman.isSkillVerified) {
+        // 记录调试信息
+        this.logger.warn(
+          `工匠 ${craftsman_id} 技能认证状态为 false (isSkillVerified: ${craftsman.isSkillVerified})`,
+        );
+        throw new HttpException(
+          '该工匠未完成技能认证，无法分配订单',
+          HttpStatus.BAD_REQUEST,
+        );
       }
 
       // 3. 验证工价项是否存在且属于父订单（支持主工价和子工价）
@@ -2903,7 +3063,7 @@ export class OrderService {
   }
 
   /**
-   * 检查订单是否完成（所有父工价和子工价都已验收）
+   * 检查订单是否完成（所有工价和辅材都已验收）
    * @param orderId 订单ID
    * @returns 是否完成
    */
@@ -2916,38 +3076,297 @@ export class OrderService {
       return false;
     }
 
-    let allWorkItems: WorkPriceItem[];
-
-    // 如果是工匠订单（有 parent_order_id），从父订单中查询分配给该工匠的工价项
-    if (order.parent_order_id && order.craftsman_user_id) {
-      // 查询父订单中分配给该工匠的所有工价项（包括主工价和子工价）
-      allWorkItems = await this.workPriceItemRepository.find({
-        where: {
-          order_id: order.parent_order_id,
-          assigned_craftsman_id: order.craftsman_user_id,
-        },
-      });
-    } else {
-      // 普通订单，查询该订单的所有工价项
-      allWorkItems = await this.workPriceItemRepository.find({
-        where: { order_id: orderId },
-      });
+    // 情况1：分配订单（工匠单）- 检查该工匠单的工价项和辅材
+    if (order.parent_order_id && order.craftsman_user_id && order.is_assigned) {
+      return await this.checkAssignedOrderCompleted(orderId, order);
     }
 
-    // 检查所有工价项是否都已验收
+    // 情况2：工长订单 - 检查工长单本身的工价项和辅材是否都验收
+    if (order.order_type === 'gangmaster' && !order.parent_order_id) {
+      return await this.checkGangmasterOrderCompleted(orderId, order);
+    }
+
+    // 情况3：普通工匠订单 - 检查该订单的工价项和辅材
+    if (order.order_type === 'craftsman' && !order.parent_order_id) {
+      return await this.checkCraftsmanOrderCompleted(orderId, order);
+    }
+
+    console.log(`订单 ${orderId}：订单类型不符合预期，无法判断完成状态`);
+    return false;
+  }
+
+  /**
+   * 检查分配订单（工匠单）是否完成
+   * @param orderId 分配订单ID
+   * @param order 订单信息
+   */
+  private async checkAssignedOrderCompleted(orderId: number, order: Order): Promise<boolean> {
+    // 查询该分配订单的所有工价项
+    const allWorkItems = await this.workPriceItemRepository.find({
+      where: { order_id: orderId },
+    });
+
     if (allWorkItems.length === 0) {
-      console.log(`订单 ${orderId}：没有找到工价项，订单未完成`);
+      console.log(`分配订单 ${orderId}：没有找到工价项，订单未完成`);
       return false;
     }
 
-    const allAccepted = allWorkItems.every((item) => item.is_accepted === true);
-    if (!allAccepted) {
+    // 检查所有工价项是否都已验收
+    const allWorkItemsAccepted = allWorkItems.every((item) => item.is_accepted === true);
+    if (!allWorkItemsAccepted) {
       const unacceptedItems = allWorkItems.filter((item) => !item.is_accepted);
-      console.log(`订单 ${orderId}：还有 ${unacceptedItems.length} 个工价项未验收，未验收的工价项ID: ${unacceptedItems.map(item => item.id).join(', ')}`);
+      console.log(`分配订单 ${orderId}：还有 ${unacceptedItems.length} 个工价项未验收，未验收的工价项ID: ${unacceptedItems.map(item => item.id).join(', ')}`);
+      return false;
     } else {
-      console.log(`订单 ${orderId}：所有 ${allWorkItems.length} 个工价项都已验收，订单完成`);
+      console.log(`分配订单 ${orderId}：所有 ${allWorkItems.length} 个工价项都已验收`);
     }
-    return allAccepted;
+
+    // 查询该分配订单的所有辅材
+    const allMaterials = await this.materialsRepository.find({
+      where: { orderId: orderId },
+    });
+
+    // 检查辅材验收状态
+    if (allMaterials.length > 0) {
+      const allMaterialsAccepted = allMaterials.every((material) => material.is_accepted === true);
+      if (!allMaterialsAccepted) {
+        const unacceptedMaterials = allMaterials.filter((material) => !material.is_accepted);
+        console.log(`分配订单 ${orderId}：还有 ${unacceptedMaterials.length} 个辅材未验收，未验收的辅材ID: ${unacceptedMaterials.map(m => m.id).join(', ')}`);
+        return false;
+      } else {
+        console.log(`分配订单 ${orderId}：所有 ${allMaterials.length} 个辅材都已验收`);
+      }
+    } else {
+      console.log(`分配订单 ${orderId}：没有辅材，不需要验收辅材`);
+    }
+
+    console.log(`分配订单 ${orderId}：所有工价项和辅材都已验收，订单完成`);
+    return true;
+  }
+
+  /**
+   * 检查工长订单是否完成
+   * 工长订单完成条件：
+   * 1. 所有工价项都已验收
+   * 2. 工长单创建的所有工匠单的辅材都已验收
+   * （工长单本身没有辅材，只检查工匠单的辅材）
+   * @param orderId 工长订单ID
+   * @param order 订单信息
+   */
+  private async checkGangmasterOrderCompleted(orderId: number, order: Order): Promise<boolean> {
+    // 1. 查询工长单的所有工价项
+    const allWorkItems = await this.workPriceItemRepository.find({
+      where: {
+        order_id: orderId,
+      },
+    });
+
+    if (allWorkItems.length === 0) {
+      console.log(`工长订单 ${orderId}：没有找到工价项，订单未完成`);
+      return false;
+    }
+
+    // 2. 检查所有工价项是否都已验收
+    const allWorkItemsAccepted = allWorkItems.every((item) => item.is_accepted === true);
+    if (!allWorkItemsAccepted) {
+      const unacceptedItems = allWorkItems.filter((item) => !item.is_accepted);
+      console.log(`工长订单 ${orderId}：还有 ${unacceptedItems.length} 个工价项未验收，未验收的工价项ID: ${unacceptedItems.map(item => item.id).join(', ')}`);
+      return false;
+    } else {
+      console.log(`工长订单 ${orderId}：所有 ${allWorkItems.length} 个工价项都已验收`);
+    }
+
+    // 3. 查询所有分配订单（工匠单）
+    const assignedOrders = await this.orderRepository.find({
+      where: {
+        parent_order_id: orderId,
+        is_assigned: true,
+      },
+    });
+
+    // 4. 如果没有分配订单，但所有工价项都已验收，工长订单完成
+    if (assignedOrders.length === 0) {
+      console.log(`工长订单 ${orderId}：没有分配订单，但所有工价项都已验收，工长订单完成`);
+      return true;
+    }
+
+    // 5. 检查每个分配订单（工匠单）的所有辅材是否都已验收
+    for (const assignedOrder of assignedOrders) {
+      const allMaterials = await this.materialsRepository.find({
+        where: { orderId: assignedOrder.id },
+      });
+
+      if (allMaterials.length > 0) {
+        const allMaterialsAccepted = allMaterials.every((material) => material.is_accepted === true);
+        if (!allMaterialsAccepted) {
+          const unacceptedMaterials = allMaterials.filter((material) => !material.is_accepted);
+          console.log(`工长订单 ${orderId}：工匠单 ${assignedOrder.id} 还有 ${unacceptedMaterials.length} 个辅材未验收，未验收的辅材ID: ${unacceptedMaterials.map(m => m.id).join(', ')}`);
+          return false;
+        }
+      }
+    }
+
+    console.log(`工长订单 ${orderId}：所有工价项都已验收，所有工匠单的辅材都已验收，工长订单完成`);
+    return true;
+  }
+
+  /**
+   * 检查普通工匠订单是否完成
+   * @param orderId 工匠订单ID
+   * @param order 订单信息
+   */
+  private async checkCraftsmanOrderCompleted(orderId: number, order: Order): Promise<boolean> {
+    // 查询该订单的所有工价项
+    const allWorkItems = await this.workPriceItemRepository.find({
+      where: { order_id: orderId },
+    });
+
+    if (allWorkItems.length === 0) {
+      console.log(`工匠订单 ${orderId}：没有找到工价项，订单未完成`);
+      return false;
+    }
+
+    // 检查所有工价项是否都已验收
+    const allWorkItemsAccepted = allWorkItems.every((item) => item.is_accepted === true);
+    if (!allWorkItemsAccepted) {
+      const unacceptedItems = allWorkItems.filter((item) => !item.is_accepted);
+      console.log(`工匠订单 ${orderId}：还有 ${unacceptedItems.length} 个工价项未验收，未验收的工价项ID: ${unacceptedItems.map(item => item.id).join(', ')}`);
+      return false;
+    } else {
+      console.log(`工匠订单 ${orderId}：所有 ${allWorkItems.length} 个工价项都已验收`);
+    }
+
+    // 查询该订单的所有辅材
+    const allMaterials = await this.materialsRepository.find({
+      where: { orderId: orderId },
+    });
+
+    // 检查辅材验收状态
+    if (allMaterials.length > 0) {
+      const allMaterialsAccepted = allMaterials.every((material) => material.is_accepted === true);
+      if (!allMaterialsAccepted) {
+        const unacceptedMaterials = allMaterials.filter((material) => !material.is_accepted);
+        console.log(`工匠订单 ${orderId}：还有 ${unacceptedMaterials.length} 个辅材未验收，未验收的辅材ID: ${unacceptedMaterials.map(m => m.id).join(', ')}`);
+        return false;
+      } else {
+        console.log(`工匠订单 ${orderId}：所有 ${allMaterials.length} 个辅材都已验收`);
+      }
+    } else {
+      console.log(`工匠订单 ${orderId}：没有辅材，不需要验收辅材`);
+    }
+
+    console.log(`工匠订单 ${orderId}：所有工价项和辅材都已验收，订单完成`);
+    return true;
+  }
+
+  /**
+   * 公开方法：检查订单是否完成（供其他服务调用）
+   * @param orderId 订单ID
+   * @returns 是否完成
+   */
+  async checkOrderCompletedPublic(orderId: number): Promise<boolean> {
+    return this.checkOrderCompleted(orderId);
+  }
+
+  /**
+   * 处理订单完成逻辑（验收工价/辅材后可能触发）
+   * @param orderId 订单ID
+   */
+  async handleOrderCompletionAfterAcceptance(orderId: number): Promise<void> {
+    try {
+      const isCompleted = await this.checkOrderCompleted(orderId);
+      if (!isCompleted) {
+        return;
+      }
+
+      // 获取订单信息
+      const order = await this.orderRepository.findOne({
+        where: { id: orderId },
+      });
+
+      if (!order || order.order_status === OrderStatus.COMPLETED) {
+        return;
+      }
+
+      console.log(`订单 ${orderId} 完成，开始处理订单完成逻辑...`);
+
+      // 如果是工长订单，订单完成时打款剩余的工长费用
+      if (order.order_type === 'gangmaster' && order.craftsman_user_id) {
+        const gangmasterCost = Number(order.gangmaster_cost) || 0;
+        if (gangmasterCost > 0) {
+          // 查询该订单的工长费用打款记录
+          const queryResult = await this.walletTransactionService.getTransactions({
+            craftsman_user_id: order.craftsman_user_id,
+            order_id: orderId.toString(),
+            type: WalletTransactionType.INCOME,
+          });
+
+          let paidAmount = 0;
+          if (queryResult.success && queryResult.data) {
+            // 计算已支付的工长费用（25%的打款记录）
+            const transactions = queryResult.data;
+            const expectedAmount25 = gangmasterCost * 0.25;
+            const paidTransactions = transactions.filter(
+              (tx) =>
+                Math.abs(Number(tx.amount) - expectedAmount25) < 0.01 &&
+                (tx.description?.includes('订单验收（工长费用') ||
+                  tx.description?.includes('订单验收')),
+            );
+            paidAmount = paidTransactions.length * expectedAmount25;
+          }
+
+          // 剩余需要支付的工长费用
+          const remainingAmount = gangmasterCost - paidAmount;
+
+          if (remainingAmount > 0) {
+            // 订单完成时打款剩余部分
+            console.log(`工长订单 ${orderId} 完成，打款剩余工长费用: ${remainingAmount}（已支付: ${paidAmount}，总额: ${gangmasterCost}）`);
+            await this.walletService.addBalance(
+              order.craftsman_user_id,
+              remainingAmount,
+            );
+
+            // 创建账户明细
+            try {
+              await this.walletTransactionService.create({
+                craftsman_user_id: order.craftsman_user_id,
+                amount: remainingAmount,
+                type: WalletTransactionType.INCOME,
+                description: '订单验收（工长费用剩余）',
+                order_id: orderId.toString(),
+              });
+            } catch (error) {
+              console.error('创建账户明细失败:', error);
+            }
+          } else {
+            console.log(`工长订单 ${orderId} 完成，工长费用已全部支付（已支付: ${paidAmount}，总额: ${gangmasterCost}）`);
+          }
+        }
+      }
+
+      // 更新订单状态为已完成
+      order.order_status = OrderStatus.COMPLETED;
+      order.order_status_name = ORDER_STATUS_MAP[OrderStatus.COMPLETED];
+      await this.orderRepository.save(order);
+
+      // 订单完成时进行冻结质保金
+      await this.handleOrderCompletionFreeze(order);
+
+      // 如果是工长订单，更新所有分配出去的子订单状态为已完成
+      if (order.order_type === 'gangmaster') {
+        await this.completeAssignedOrders(orderId);
+      }
+
+      // 如果是分配订单（工匠单），检查父工长订单是否也完成
+      if (order.parent_order_id && order.is_assigned) {
+        console.log(`分配订单 ${orderId} 已完成，检查父工长订单 ${order.parent_order_id} 是否也完成...`);
+        await this.handleOrderCompletionAfterAcceptance(order.parent_order_id);
+      }
+
+      console.log(`订单 ${orderId} 已完成，质保金已冻结`);
+    } catch (error) {
+      console.error(`处理订单 ${orderId} 完成逻辑失败:`, error);
+    }
   }
 
   /**
@@ -2975,6 +3394,77 @@ export class OrderService {
 
     // 检查所有分配给该工匠的工价项是否都已验收
     return assignedWorkItems.every((item) => item.is_accepted === true);
+  }
+
+  /**
+   * 检查订单中指定工种类型的所有工价项是否都已验收
+   * @param orderId 订单ID
+   * @param workKindName 工种名称（'水电' 或 '泥工'）
+   * @returns 是否所有该工种的工价项都已验收
+   */
+  private async checkWorkKindAllAccepted(
+    orderId: number,
+    workKindName: '水电' | '泥工',
+  ): Promise<boolean> {
+    // 查询订单中所有该工种的工价项
+    const allWorkItems = await this.workPriceItemRepository.find({
+      where: { order_id: orderId },
+    });
+
+    const workKindItems = allWorkItems.filter(
+      (item) => item.work_kind_name === workKindName,
+    );
+
+    // 如果没有该工种的工价项，返回 false
+    if (workKindItems.length === 0) {
+      return false;
+    }
+
+    // 检查所有该工种的工价项是否都已验收
+    return workKindItems.every((item) => item.is_accepted === true);
+  }
+
+  /**
+   * 检查是否已经为指定工种类型打款过25%工长费用
+   * @param orderId 订单ID
+   * @param craftsmanUserId 工长用户ID
+   * @param gangmasterCost 工长费用
+   * @param workKindName 工种名称（'水电' 或 '泥工'）
+   * @returns 是否已经打款过
+   */
+  private async hasPaidWorkKind25Percent(
+    orderId: number,
+    craftsmanUserId: number,
+    gangmasterCost: number,
+    workKindName: '水电' | '泥工',
+  ): Promise<boolean> {
+    // 查询该订单的工长费用打款记录
+    const queryResult = await this.walletTransactionService.getTransactions({
+      craftsman_user_id: craftsmanUserId,
+      order_id: orderId.toString(),
+      type: WalletTransactionType.INCOME,
+    });
+
+    if (!queryResult.success || !queryResult.data) {
+      return false;
+    }
+
+    const transactions = queryResult.data;
+    const expectedAmount = gangmasterCost * 0.25;
+
+    // 检查是否有金额为expectedAmount的打款记录，且描述中包含工种名称或工长费用相关描述
+    const hasPaid = transactions.some(
+      (tx) =>
+        Math.abs(Number(tx.amount) - expectedAmount) < 0.01 && // 允许小数误差
+        (tx.description?.includes('订单验收（工长费用）') ||
+          tx.description?.includes('订单验收')) &&
+        (tx.description?.includes(workKindName) ||
+          // 如果没有明确标注工种，检查是否已经有打款记录（通过金额判断）
+          // 这里简化处理：如果金额匹配且是工长费用相关的描述，就认为已打款
+          true),
+    );
+
+    return hasPaid;
   }
 
   /**
@@ -3030,27 +3520,31 @@ export class OrderService {
     // 确定从哪个工匠账户扣除保证金
     let targetCraftsmanId: number | null = null;
     let freezeAmount = 0;
+    let maxFreezeAmount = 0;
     let orderTypeDesc = '';
 
     if (isGangmasterOrder) {
       // 工长订单
       if (assignedCraftsmanId) {
-        // 从工长订单分配的工价项：从被分配的工匠账户扣除600元保证金
+        // 从工长订单分配的工价项：从被分配的工匠账户扣除600元保证金，上限3000元
         targetCraftsmanId = assignedCraftsmanId;
-        freezeAmount = 600;
+        freezeAmount = DEPOSIT_FREEZE_CONFIG.gangmasterAssignedItem.freezeAmount;
+        maxFreezeAmount = DEPOSIT_FREEZE_CONFIG.gangmasterAssignedItem.maxFreezeAmount;
         orderTypeDesc = '工长订单分配的工价项';
-        console.log(`订单 ${order.id}：工长订单分配的工价项完成，准备从工匠 ${assignedCraftsmanId} 扣除600元保证金`);
+        console.log(`订单 ${order.id}：工长订单分配的工价项完成，准备从工匠 ${assignedCraftsmanId} 扣除${freezeAmount}元保证金（上限${maxFreezeAmount}元）`);
       } else {
-        // 工长订单本身完成：从工长账户扣除1000元保证金
+        // 工长订单本身完成：从工长账户扣除1000元保证金，上限5000元
         targetCraftsmanId = order.craftsman_user_id;
-        freezeAmount = 1000;
+        freezeAmount = DEPOSIT_FREEZE_CONFIG.gangmasterOrder.freezeAmount;
+        maxFreezeAmount = DEPOSIT_FREEZE_CONFIG.gangmasterOrder.maxFreezeAmount;
         orderTypeDesc = '工长订单';
-        console.log(`订单 ${order.id}：工长订单完成，准备从工长 ${order.craftsman_user_id} 扣除1000元保证金`);
+        console.log(`订单 ${order.id}：工长订单完成，准备从工长 ${order.craftsman_user_id} 扣除${freezeAmount}元保证金（上限${maxFreezeAmount}元）`);
       }
     } else if (isCraftsmanOrder) {
-      // 工匠订单：从接单的工匠账户扣除600元保证金
+      // 工匠订单：从接单的工匠账户扣除600元保证金，上限3000元
       targetCraftsmanId = order.craftsman_user_id;
-      freezeAmount = 600;
+      freezeAmount = DEPOSIT_FREEZE_CONFIG.craftsmanOrder.freezeAmount;
+      maxFreezeAmount = DEPOSIT_FREEZE_CONFIG.craftsmanOrder.maxFreezeAmount;
       orderTypeDesc = '工匠订单';
     }
 
@@ -3064,17 +3558,30 @@ export class OrderService {
     const currentBalance = Number(wallet.balance) || 0;
     const currentFreezeMoney = Number(wallet.freeze_money) || 0;
 
-    if (currentBalance >= freezeAmount) {
+    // 检查是否已达到质保金上限
+    if (currentFreezeMoney >= maxFreezeAmount) {
+      console.log(
+        `订单 ${order.id} 完成，${orderTypeDesc}质保金已达到上限（当前冻结: ¥${currentFreezeMoney.toFixed(2)}，上限: ¥${maxFreezeAmount.toFixed(2)}），不再冻结`,
+      );
+      return;
+    }
+
+    // 计算本次可冻结的金额（不超过上限）
+    const availableFreezeAmount = maxFreezeAmount - currentFreezeMoney;
+    const actualFreezeAmount = Math.min(freezeAmount, availableFreezeAmount);
+
+    // 检查余额是否足够
+    if (currentBalance >= actualFreezeAmount) {
       await this.walletService.deductBalanceAndFreeze(
         targetCraftsmanId,
-        freezeAmount,
+        actualFreezeAmount,
       );
       console.log(
-        `订单 ${order.id} 完成，${orderTypeDesc}冻结金额: ¥${freezeAmount.toFixed(2)}（从工匠ID ${targetCraftsmanId} 扣除）`,
+        `订单 ${order.id} 完成，${orderTypeDesc}冻结金额: ¥${actualFreezeAmount.toFixed(2)}（从工匠ID ${targetCraftsmanId} 扣除，累计冻结: ¥${(currentFreezeMoney + actualFreezeAmount).toFixed(2)}/${maxFreezeAmount.toFixed(2)}）`,
       );
     } else {
       console.log(
-        `订单 ${order.id} 完成，${orderTypeDesc}余额不足（余额: ¥${currentBalance.toFixed(2)}），无法冻结 ¥${freezeAmount.toFixed(2)}`,
+        `订单 ${order.id} 完成，${orderTypeDesc}余额不足（余额: ¥${currentBalance.toFixed(2)}），无法冻结 ¥${actualFreezeAmount.toFixed(2)}`,
       );
     }
   }
@@ -3224,10 +3731,38 @@ export class OrderService {
         );
       }
 
-      // 9. 如果是分配订单，同步更新分配订单的工价项状态
-      if (order.parent_order_id && order.craftsman_user_id && workPriceItem.id !== targetWorkPriceItem.id) {
-      workPriceItem.is_accepted = true;
-      await this.workPriceItemRepository.save(workPriceItem);
+      // 9. 如果验收的是父订单的工价项，需要同步更新所有分配给该工匠的工价项副本状态
+      if (isGangmasterOrder && targetWorkPriceItem.assigned_craftsman_id) {
+        // 查询分配订单中对应的工价项副本并更新
+        const assignedOrders = await this.orderRepository.find({
+          where: {
+            parent_order_id: parentOrder.id,
+            craftsman_user_id: targetWorkPriceItem.assigned_craftsman_id,
+            is_assigned: true,
+          },
+        });
+
+        for (const assignedOrder of assignedOrders) {
+          // 查询分配订单中对应的工价项副本（通过相同的work_price_id）
+          const assignedWorkItems = await this.workPriceItemRepository.find({
+            where: {
+              order_id: assignedOrder.id,
+              work_price_id: targetWorkPriceItem.work_price_id,
+            },
+          });
+
+          for (const assignedWorkItem of assignedWorkItems) {
+            if (assignedWorkItem.is_accepted !== true) {
+              assignedWorkItem.is_accepted = true;
+              await this.workPriceItemRepository.save(assignedWorkItem);
+              console.log(`工长订单 ${parentOrder.id}：同步更新分配订单 ${assignedOrder.id} 的工价项 ${assignedWorkItem.id} 验收状态`);
+            }
+          }
+        }
+      } else if (order.parent_order_id && order.craftsman_user_id && workPriceItem.id !== targetWorkPriceItem.id) {
+        // 如果是验收分配订单自己的工价项
+        workPriceItem.is_accepted = true;
+        await this.workPriceItemRepository.save(workPriceItem);
         console.log(`订单 ${order.id} 验收：同步更新分配订单的工价项 ${workPriceItem.id} 状态`);
       }
 
@@ -3249,51 +3784,57 @@ export class OrderService {
         }
       }
 
-      // 10. 如果是工长订单，且验收的工种是泥工或水电，前两次符合条件的验收每次打款25%
+      // 10. 如果是工长订单，且验收的工种是泥工或水电，检查整个订单中该工种是否都已验收，如果都验收了且还没打款过，打款25%
       if (isGangmasterOrder) {
         const workKindName = targetWorkPriceItem.work_kind_name;
         const isTilerOrPlumbing = workKindName === '泥工' || workKindName === '水电';
 
         if (isTilerOrPlumbing && parentOrder.craftsman_user_id) {
-          // 查询所有已验收的泥工或水电工价项（包括当前验收的这个）
-          const allWorkItems = await this.workPriceItemRepository.find({
-            where: { order_id: parentOrder.id },
-          });
-
-          const acceptedTilerOrPlumbingItems = allWorkItems.filter(
-            (item) =>
-              (item.work_kind_name === '泥工' || item.work_kind_name === '水电') &&
-              item.is_accepted === true,
+          // 检查订单中所有该工种的工价项是否都已验收
+          const allWorkKindAccepted = await this.checkWorkKindAllAccepted(
+            parentOrder.id,
+            workKindName as '水电' | '泥工',
           );
 
-          // 只在前两次符合条件的验收时打款25%
-          if (acceptedTilerOrPlumbingItems.length <= 2) {
+          if (allWorkKindAccepted) {
             // 获取工长费用
             const gangmasterCost = Number(parentOrder.gangmaster_cost) || 0;
             if (gangmasterCost > 0) {
-              // 给工长打款 25%
-              const foremanAmount = gangmasterCost * 0.25;
-              console.log(`工长订单 ${parentOrder.id}：第 ${acceptedTilerOrPlumbingItems.length} 次符合条件的验收，打款25%: ${foremanAmount}`);
-              await this.walletService.addBalance(
+              // 检查是否已经为该工种打款过25%
+              const hasPaid = await this.hasPaidWorkKind25Percent(
+                parentOrder.id,
                 parentOrder.craftsman_user_id,
-                foremanAmount,
+                gangmasterCost,
+                workKindName as '水电' | '泥工',
               );
 
-              // 创建账户明细（使用原始订单ID）
-              try {
-                await this.walletTransactionService.create({
-                  craftsman_user_id: parentOrder.craftsman_user_id,
-                  amount: foremanAmount,
-                  type: WalletTransactionType.INCOME,
-                  description: '订单验收（工长费用）',
-                  order_id: parentOrder.id.toString(),
-                });
-              } catch (error) {
-                console.error('创建账户明细失败:', error);
+              if (!hasPaid) {
+                // 给工长打款 25%
+                const foremanAmount = gangmasterCost * 0.25;
+                console.log(`工长订单 ${parentOrder.id}：验收${workKindName}，订单中所有${workKindName}工价项都已验收，打款25%: ${foremanAmount}`);
+                await this.walletService.addBalance(
+                  parentOrder.craftsman_user_id,
+                  foremanAmount,
+                );
+
+                // 创建账户明细（使用原始订单ID）
+                try {
+                  await this.walletTransactionService.create({
+                    craftsman_user_id: parentOrder.craftsman_user_id,
+                    amount: foremanAmount,
+                    type: WalletTransactionType.INCOME,
+                    description: `订单验收（工长费用-${workKindName}）`,
+                    order_id: parentOrder.id.toString(),
+                  });
+                } catch (error) {
+                  console.error('创建账户明细失败:', error);
+                }
+              } else {
+                console.log(`工长订单 ${parentOrder.id}：验收${workKindName}，订单中所有${workKindName}工价项都已验收，但已打款过25%，不再打款`);
               }
             }
           } else {
-            console.log(`工长订单 ${parentOrder.id}：第 ${acceptedTilerOrPlumbingItems.length} 次符合条件的验收，不打款（前两次已打款50%）`);
+            console.log(`工长订单 ${parentOrder.id}：验收${workKindName}，订单中还有${workKindName}工价项未验收，暂不打款`);
           }
         }
       }
@@ -3328,30 +3869,37 @@ export class OrderService {
               `工长订单 ${parentOrder.id}：所有工价项都已验收，订单已完成`,
             );
             
-            // 订单完成时打款剩余的50%工长费用（前两次已打款50%）
+            // 订单完成时打款剩余的工长费用
             if (parentOrder.craftsman_user_id) {
               const gangmasterCost = Number(parentOrder.gangmaster_cost) || 0;
               if (gangmasterCost > 0) {
-                // 查询所有已验收的泥工或水电工价项
-                const allWorkItems = await this.workPriceItemRepository.find({
-                  where: { order_id: parentOrder.id },
+                // 查询该订单的工长费用打款记录
+                const queryResult = await this.walletTransactionService.getTransactions({
+                  craftsman_user_id: parentOrder.craftsman_user_id,
+                  order_id: parentOrder.id.toString(),
+                  type: WalletTransactionType.INCOME,
                 });
 
-                const acceptedTilerOrPlumbingItems = allWorkItems.filter(
-                  (item) =>
-                    (item.work_kind_name === '泥工' || item.work_kind_name === '水电') &&
-                    item.is_accepted === true,
-                );
+                let paidAmount = 0;
+                if (queryResult.success && queryResult.data) {
+                  // 计算已支付的工长费用（25%的打款记录）
+                  const transactions = queryResult.data;
+                  const expectedAmount25 = gangmasterCost * 0.25;
+                  const paidTransactions = transactions.filter(
+                    (tx) =>
+                      Math.abs(Number(tx.amount) - expectedAmount25) < 0.01 &&
+                      (tx.description?.includes('订单验收（工长费用') ||
+                        tx.description?.includes('订单验收')),
+                  );
+                  paidAmount = paidTransactions.length * expectedAmount25;
+                }
 
-                // 计算已经支付的工长费用（前两次每次25%，共50%）
-                const paidAmount = Math.min(acceptedTilerOrPlumbingItems.length, 2) * gangmasterCost * 0.25;
-
-                // 剩余需要支付的工长费用（50%）
+                // 剩余需要支付的工长费用
                 const remainingAmount = gangmasterCost - paidAmount;
 
                 if (remainingAmount > 0) {
-                  // 订单完成时打款剩余的50%
-                  console.log(`工长订单 ${parentOrder.id} 完成，打款剩余50%工长费用: ${remainingAmount}（已支付: ${paidAmount}）`);
+                  // 订单完成时打款剩余部分
+                  console.log(`工长订单 ${parentOrder.id} 完成，打款剩余工长费用: ${remainingAmount}（已支付: ${paidAmount}，总额: ${gangmasterCost}）`);
                   await this.walletService.addBalance(
                     parentOrder.craftsman_user_id,
                     remainingAmount,
@@ -3369,6 +3917,8 @@ export class OrderService {
                   } catch (error) {
                     console.error('创建账户明细失败:', error);
                   }
+                } else {
+                  console.log(`工长订单 ${parentOrder.id} 完成，工长费用已全部支付（已支付: ${paidAmount}，总额: ${gangmasterCost}）`);
                 }
               }
             }
