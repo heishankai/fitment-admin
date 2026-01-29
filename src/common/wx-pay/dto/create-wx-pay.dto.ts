@@ -10,4 +10,6 @@ export class CreateWxPayDto {
   url: string;
 
   out_trade_no: string;
+
+  attach: string;
 }

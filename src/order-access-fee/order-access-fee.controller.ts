@@ -163,7 +163,7 @@ export class OrderAccessFeeController {
         console.log('解密成功', res);
         const payResult = JSON.parse(res);
         // 设置订单已支付
-        await this.orderAccessFeeService.setPaidByOrderNo(payResult.attach);
+        await this.orderAccessFeeService.setPaidByOrderNo(payResult.out_trade_no);
         return null;
       } catch (error) {
         console.log(error);

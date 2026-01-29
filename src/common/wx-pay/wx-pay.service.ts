@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import {
   createDecipheriv,
   createSign,
@@ -27,7 +27,7 @@ export class WxPayService {
       mchid: WX_PAY_CONFIG.mchid,
       description: createWxPayDto.description, // 商品描述
       out_trade_no: createWxPayDto.out_trade_no, // 支付订单号
-      attach: createWxPayDto.out_trade_no, // 附加数据,回调时会原样返回
+      attach: createWxPayDto.attach, // 附加数据,回调时会原样返回
       notify_url: createWxPayDto.notify_url, // 支付结果通知地址
       amount: {
         total: createWxPayDto.amount, // 金额单位为分
@@ -50,7 +50,9 @@ export class WxPayService {
       res = await axios.post(url, data, { headers: header });
     } catch (error) {
       console.error('微信支付下单失败:');
-      return error.response;
+      console.error(error.response);
+      throw new HttpException(error.response.data, HttpStatus.BAD_REQUEST);
+      // return error.response;
     }
     return res;
   }

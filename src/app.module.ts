@@ -53,6 +53,8 @@ import { DATABASE_CONFIG } from './common/constants/app.constants';
 import { WstModule } from './wst/wst.module';
 import { OrderAccessFeeModule } from './order-access-fee/order-access-fee.module';
 import { WxPayModule } from './common/wx-pay/wx-pay.module';
+import { OrderPaymentWxpayModule } from './order-payment-wxpay/order-payment-wxpay.module';
+import { MaterialsPaymentWxpayModule } from './materials-payment-wxpay/materials-payment-wxpay.module';
 
 /**
  * 应用程序的根模块
@@ -95,7 +97,7 @@ import { WxPayModule } from './common/wx-pay/wx-pay.module';
     CraftsmanWechatChatModule, // 工匠-微信用户聊天模块
     PlatformNoticeModule, // 平台公告模块
     SystemNotificationModule, // 系统通知模块
-  AdminNotificationModule, // 管理员通知模块
+    AdminNotificationModule, // 管理员通知模块
     OrderModule, // 订单模块
     WalletModule, // 钱包模块
     CraftsmanBankCardModule, // 工匠银行卡模块
@@ -111,6 +113,8 @@ import { WxPayModule } from './common/wx-pay/wx-pay.module';
     GetPriceModule, // 获取报价模块
     WelcomeModule, // 欢迎页配置模块
     ActivityModule, // 活动模块
+    OrderPaymentWxpayModule, // 订单支付模块(微信)
+    MaterialsPaymentWxpayModule, //材料支付模块(微信)
   ],
   // 导入其他模块的数组
   controllers: [AppController], // 注册控制器，处理 HTTP 请求
