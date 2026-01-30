@@ -111,7 +111,9 @@ export class MaterialsPaymentWxpayService {
           res = await this.wxPayService.createOrder(createWxPayDto);
         } catch (error) {
           if (error.response.code === 'ORDERPAID') {
-            this.handlePaymentSingleCallback(materialsPaymentWxpay.order_no);
+            await this.handlePaymentSingleCallback(
+              materialsPaymentWxpay.order_no,
+            );
             throw new HttpException('订单已支付', 200);
           }
           throw new HttpException(
@@ -265,7 +267,9 @@ export class MaterialsPaymentWxpayService {
           res = await this.wxPayService.createOrder(createWxPayDto);
         } catch (error) {
           if (error.response.code === 'ORDERPAID') {
-            this.handlePaymentBatchCallback(materialsPaymentWxpay.order_no);
+            await this.handlePaymentBatchCallback(
+              materialsPaymentWxpay.order_no,
+            );
             throw new HttpException('订单已支付', 200);
           }
           throw new HttpException(
@@ -375,7 +379,7 @@ export class MaterialsPaymentWxpayService {
     });
 
     // 支付
-    this.materialsRepository.update(materials.id, {
+    await this.materialsRepository.update(materials.id, {
       is_paid: true,
     });
     console.log(`支付成功，材料价格单id: ${materials.id}`);

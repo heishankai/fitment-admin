@@ -99,7 +99,7 @@ export class OrderPaymentWxpayService {
         } catch (error) {
           console.log(error.response);
           if (error.response.code === 'ORDERPAID') {
-            this.handlePaymentCallback(orderPaymentWxpay.order_no);
+            await this.handlePaymentCallback(orderPaymentWxpay.order_no);
             throw new HttpException('订单已支付', 200);
           }
           throw new HttpException(
@@ -232,7 +232,7 @@ export class OrderPaymentWxpayService {
     });
 
     // 工价费支付
-    this.workPriceItemRepository.update(workPriceItem.id, {
+    await this.workPriceItemRepository.update(workPriceItem.id, {
       is_paid: true,
     });
     console.log(
@@ -241,14 +241,14 @@ export class OrderPaymentWxpayService {
 
     // 服务费支付
     if (workPriceItem.work_group_id === 1) {
-      this.orderRepository.update(order.id, {
+      await this.orderRepository.update(order.id, {
         total_service_fee_is_paid: true,
       });
       console.log(
         `已修改order的total_service_fee_is_paid为true，orderID: ${order.id}`,
       );
     } else {
-      this.workPriceItemRepository.update(workPriceItem.id, {
+      await this.workPriceItemRepository.update(workPriceItem.id, {
         total_service_fee_is_paid: true,
       });
       console.log(
@@ -257,7 +257,7 @@ export class OrderPaymentWxpayService {
     }
 
     // 支付单修改状态为已支付
-    this.orderPaymentWxpayRepository.update(orderPaymentWxpay.id, {
+    await this.orderPaymentWxpayRepository.update(orderPaymentWxpay.id, {
       status: 1,
     });
     console.log('回调处理完成');
