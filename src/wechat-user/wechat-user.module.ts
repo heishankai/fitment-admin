@@ -9,10 +9,12 @@ import { WechatUserController } from './wechat-user.controller';
 import { WechatUserService } from './wechat-user.service';
 // constants
 import { JWT_CONFIG } from '../common/constants/app.constants';
+import { SmsNotifyConfigModule } from '../sms-notify-config/sms-notify-config.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([WechatUser]),
+    SmsNotifyConfigModule,
     JwtModule.register({
       secret: JWT_CONFIG.secret,
       signOptions: { expiresIn: JWT_CONFIG.expiresIn },

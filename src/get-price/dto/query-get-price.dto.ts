@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsNumber, Min, Max, IsIn } from 'class-validator';
+import { IsOptional, IsString, IsNumber, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
@@ -37,11 +37,10 @@ export class QueryGetPriceDto {
   phone?: string;
 
   /**
-   * 房屋类型（精确匹配，new 或 old）
+   * 房屋类型（精确匹配）
    */
   @IsOptional()
   @IsString({ message: '房屋类型必须是字符串' })
-  @IsIn(['new', 'old'], { message: '房屋类型必须是 new 或 old' })
   houseType?: string;
 }
 

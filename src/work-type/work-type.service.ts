@@ -25,16 +25,27 @@ export class WorkTypeService {
         pageIndex = 1,
         pageSize = 10,
         work_title = '',
+        work_kind_code,
       } = queryDto;
 
       // 创建查询构建器
       const query = this.workTypeRepository.createQueryBuilder('work_type');
 
-      // 添加筛选条件
+      // 添加筛选条件：工种名称（模糊匹配）
       if (work_title) {
         query.andWhere('work_type.work_title LIKE :work_title', {
           work_title: `%${work_title}%`,
         });
+      }
+
+      // 添加筛选条件：工种编码（work_kind.work_kind_code 精确匹配）
+      if (work_kind_code !== undefined && work_kind_code !== null && work_kind_code !== '') {
+        query.andWhere(
+          'JSON_UNQUOTE(JSON_EXTRACT(work_type.work_kind, "$.work_kind_code")) = :workKindCode',
+          {
+            workKindCode: work_kind_code,
+          },
+        );
       }
 
       // 按创建时间倒序排列
@@ -175,28 +186,19 @@ export class WorkTypeService {
   }
 
   /**
-   * 根据工种ID查询所有工价数据
-   * @param workKindId 工种ID（字符串或数字）
+   * 根据工种编码查询所有工价数据
+   * @param workKindCode 工种编码
    * @returns 工价数据列表
    */
   async getWorkTypesByWorkKindId(
-    workKindId: string | number,
+    workKindCode: string,
   ): Promise<WorkType[]> {
     try {
-      // 将 workKindId 转换为字符串和数字两种格式，因为 JSON 中可能存储为字符串或数字
-      const workKindIdStr = String(workKindId);
-      const workKindIdNum = Number(workKindId);
-
-      // 使用 JSON_EXTRACT 查询 JSON 字段
-      // 查询 work_kind.value 等于 workKindId 的记录
       const workTypes = await this.workTypeRepository
         .createQueryBuilder('work_type')
         .where(
-          '(JSON_EXTRACT(work_type.work_kind, "$.value") = :workKindIdStr OR JSON_EXTRACT(work_type.work_kind, "$.value") = :workKindIdNum)',
-          {
-            workKindIdStr,
-            workKindIdNum,
-          },
+          'JSON_UNQUOTE(JSON_EXTRACT(work_type.work_kind, "$.work_kind_code")) = :workKindCode',
+          { workKindCode },
         )
         .orderBy('work_type.createdAt', 'DESC')
         .getMany();
@@ -204,7 +206,7 @@ export class WorkTypeService {
       return workTypes;
     } catch (error) {
       throw new BadRequestException(
-        '根据工种ID查询工价数据失败: ' + error.message,
+        '根据工种编码查询工价数据失败: ' + error.message,
       );
     }
   }

@@ -34,17 +34,31 @@ export class UpdateIsSkillVerifiedDto {
   operation_video?: Array<{ url: string }>;
 
   /**
-   * 工种ID
+   * 工种编码
    */
   @IsOptional()
-  @IsString({ message: '工种ID必须是字符串' })
-  workKindId?: string;
+  @IsString({ message: '工种编码必须是字符串' })
+  work_kind_code?: string;
 
   /**
    * 工种名称
    */
   @IsOptional()
   @IsString({ message: '工种名称必须是字符串' })
-  workKindName?: string;
+  work_kind_name?: string;
+
+  /**
+   * 从业年限
+   */
+  @IsOptional()
+  @IsString({ message: '从业年限必须是字符串' })
+  work_years?: string;
+
+  /**
+   * 技能介绍
+   */
+  @IsOptional()
+  @IsString({ message: '技能介绍必须是字符串' })
+  skill_intro?: string;
 }
 

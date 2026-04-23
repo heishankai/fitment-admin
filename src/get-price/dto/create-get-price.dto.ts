@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsIn, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty } from 'class-validator';
 
 /**
  * 创建获取报价DTO
@@ -12,20 +12,11 @@ export class CreateGetPriceDto {
   area: string;
 
   /**
-   * 房屋类型：new（新房）或 old（老房）
+   * 房屋类型（字符串）
    */
   @IsString({ message: '房屋类型必须是字符串' })
   @IsNotEmpty({ message: '房屋类型不能为空' })
-  @IsIn(['new', 'old'], { message: '房屋类型必须是 new 或 old' })
   houseType: string;
-
-  /**
-   * 房屋类型名称：新房 或 老房（可选，如果不提供会根据 houseType 自动生成）
-   */
-  @IsOptional()
-  @IsString({ message: '房屋类型名称必须是字符串' })
-  @IsIn(['新房', '老房'], { message: '房屋类型名称必须是 新房 或 老房' })
-  houseTypeName?: string;
 
   /**
    * 位置（详细地址）

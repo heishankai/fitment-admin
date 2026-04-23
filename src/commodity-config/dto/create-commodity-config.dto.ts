@@ -55,9 +55,9 @@ export class CreateCommodityConfigDto {
   commodity_description: string; // 商品描述（最多800字）
 
   @IsString()
-  @IsNotEmpty({ message: '服务保障不能为空' })
+  @IsOptional()
   @MaxLength(800, { message: '服务保障最多800字' })
-  service_guarantee: string; // 服务保障（最多800字）
+  service_guarantee?: string; // 服务保障（最多800字）
 
   @IsArray({ message: '商品封面必须是数组' })
   @ArrayMinSize(1, { message: '商品封面至少需要1张' })

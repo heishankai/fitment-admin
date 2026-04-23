@@ -115,7 +115,7 @@ export class IsVerifiedController {
   }
 
   /**
-   * 认证通过，更新用户的 isVerified 状态为 true
+   * 认证通过：isVerified 为 true，并用实名证件名称更新工匠昵称
    * @param userId 用户ID
    * @returns null，由全局拦截器包装成标准响应
    */

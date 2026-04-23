@@ -1,3 +1,14 @@
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+// 参考 fitment-h5：按环境加载对应 .env 文件
+dotenv.config();
+const env = process.env.NODE_ENV || 'development';
+dotenv.config({
+  path: path.resolve(process.cwd(), `.env.${env}`),
+  override: true,
+});
+
 import { NestApplication, NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';

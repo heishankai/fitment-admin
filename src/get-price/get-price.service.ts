@@ -92,12 +92,6 @@ export class GetPriceService {
    */
   async createGetPrice(createGetPriceDto: CreateGetPriceDto): Promise<GetPrice> {
     try {
-      // 如果 houseTypeName 未提供，根据 houseType 自动生成
-      if (!createGetPriceDto.houseTypeName && createGetPriceDto.houseType) {
-        createGetPriceDto.houseTypeName =
-          createGetPriceDto.houseType === 'new' ? '新房' : '老房';
-      }
-
       // 创建新的获取报价记录
       const getPrice = this.getPriceRepository.create(createGetPriceDto);
 
@@ -108,14 +102,14 @@ export class GetPriceService {
       try {
         await this.adminNotificationService.create({
           title: '新的获取报价请求',
-          content: `位置：${savedGetPrice.location}\n${savedGetPrice.houseTypeName} · ${savedGetPrice.area}㎡ · ${savedGetPrice.roomType}\n手机号：${savedGetPrice.phone}`,
+          content: `位置：${savedGetPrice.location}\n${savedGetPrice.houseType} · ${savedGetPrice.area}㎡ · ${savedGetPrice.roomType}\n手机号：${savedGetPrice.phone}`,
           notification_type: 'get-price',
           notification_time: new Date().toISOString(),
           is_read: false,
           extra_data: {
             getPriceId: savedGetPrice.id,
             location: savedGetPrice.location,
-            houseTypeName: savedGetPrice.houseTypeName,
+            houseType: savedGetPrice.houseType,
             area: savedGetPrice.area,
             roomType: savedGetPrice.roomType,
             phone: savedGetPrice.phone,

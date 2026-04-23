@@ -23,11 +23,11 @@ export class QueryIsSkillVerifiedDto {
   pageSize: number;
 
   /**
-   * 工种ID（精确匹配）
+   * 工种编码（精确匹配）
    */
   @IsOptional()
-  @IsString({ message: '工种ID必须是字符串' })
-  workKindId?: string;
+  @IsString({ message: '工种编码必须是字符串' })
+  work_kind_code?: string;
 
   /**
    * 用户昵称（模糊匹配）

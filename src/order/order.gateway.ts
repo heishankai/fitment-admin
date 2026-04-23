@@ -338,7 +338,7 @@ export class OrderGateway
         fullOrder.latitude!,
         fullOrder.longitude!,
         fullOrder.work_kind_name!,
-        fullOrder.work_kind_id!,
+        fullOrder.work_kind_code!,
       );
 
       for (const { craftsman } of matchedCraftsmen) {

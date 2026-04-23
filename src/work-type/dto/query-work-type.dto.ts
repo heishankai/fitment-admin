@@ -1,4 +1,10 @@
-import { IsOptional, IsString, IsNumber, Min, Max } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsNumber,
+  Min,
+  Max,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
@@ -28,4 +34,11 @@ export class QueryWorkTypeDto {
   @IsOptional()
   @IsString({ message: '工种名称必须是字符串' })
   work_title?: string;
+
+  /**
+   * 工种编码（work_kind.work_kind_code，精确匹配）
+   */
+  @IsOptional()
+  @IsString({ message: '工种编码必须是字符串' })
+  work_kind_code?: string;
 }

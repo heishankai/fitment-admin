@@ -15,6 +15,7 @@ import { WorkKind } from './work-kind.entity';
 import { CreateWorkKindDto } from './dto/create-work-kind.dto';
 import { QueryWorkKindDto } from './dto/query-work-kind.dto';
 import { UpdateWorkKindDto } from './dto/update-work-kind.dto';
+import { UpdateSortDto } from './dto/update-sort.dto';
 import { Public } from '../auth/public.decorator';
 
 @Public()
@@ -41,6 +42,18 @@ export class WorkKindController {
     @Body(ValidationPipe) queryDto: QueryWorkKindDto,
   ): Promise<any> {
     return await this.workKindService.getWorkKindsByPage(queryDto);
+  }
+
+  /**
+   * 更新工种配置排序（拖拽排序）
+   * @param updateSortDto 包含排序后的工种ID数组
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  @Put('sort')
+  async updateSort(
+    @Body(ValidationPipe) updateSortDto: UpdateSortDto,
+  ): Promise<null> {
+    return await this.workKindService.updateSort(updateSortDto.ids);
   }
 
   /**

@@ -48,3 +48,4 @@ const visits = cfg.baseVisit + level _ 3;
 
 return { foremanFee, visits };
 }
+

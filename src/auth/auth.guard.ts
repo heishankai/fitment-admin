@@ -51,9 +51,8 @@ export class AuthGuard implements CanActivate {
         secret: JWT_CONFIG.secret,
       });
 
-      // 兼容admin、微信和工匠三种token格式
+      // 兼容 admin、C 端微信、工匠三种 token 格式
       if (payload.type === 'wechat') {
-        // 微信用户token格式
         request['user'] = {
           username: `wechat_${payload.openid}`,
           userid: payload.userId,

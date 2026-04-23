@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
+import Decimal from 'decimal.js';
 import { Materials } from './materials.entity';
 import { CreateMaterialsDto } from './dto/create-materials.dto';
 import { AcceptMaterialsDto } from './dto/accept-materials.dto';
@@ -18,6 +19,7 @@ import { OrderStatus } from '../order/order.entity';
 import { PlatformIncomeRecordService } from '../platform-income-record/platform-income-record.service';
 import { CostType } from '../platform-income-record/platform-income-record.entity';
 import { OrderService } from '../order/order.service';
+import { WX_PAY_CONFIG } from '../common/constants/app.constants';
 
 @Injectable()
 export class MaterialsService {
@@ -71,15 +73,18 @@ export class MaterialsService {
         }),
       );
 
-      // 计算总价（所有 settlement_amount 之和）
-      const total_price = materials.reduce(
-        (sum, material) => sum + Number(material.settlement_amount),
-        0,
-      );
+      // 计算总价（使用 decimal.js 避免浮点误差，保证金额计算准确可靠）
+      const total_price = materials
+        .reduce(
+          (sum, material) => sum.plus(material.settlement_amount),
+          new Decimal(0),
+        )
+        .toDecimalPlaces(2)
+        .toNumber();
 
       return {
         commodity_list,
-        total_price: Number(total_price.toFixed(2)),
+        total_price,
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -91,6 +96,95 @@ export class MaterialsService {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  /**
+   * 获取辅材支付预览信息（用于微信支付下单前校验和计算金额）
+   * 仅通过 materialId 或 materialsIds 操作，orderId 由后端从辅材记录推导
+   * @param params pay_type, materialId?, materialsIds?
+   * @returns { materials, totalAmount, description, orderId }
+   */
+  async getMaterialsPaymentPreview(params: {
+    pay_type:
+      | (typeof WX_PAY_CONFIG.payType)['MATERIAL_SINGLE']
+      | (typeof WX_PAY_CONFIG.payType)['MATERIAL_BATCH'];
+    materialId?: number;
+    materialsIds?: number[];
+  }): Promise<{
+    materials: Materials[];
+    totalAmount: number;
+    description: string;
+    orderId: number;
+  }> {
+    const { pay_type, materialId, materialsIds } = params;
+
+    let materials: Materials[];
+    if (pay_type === WX_PAY_CONFIG.payType.MATERIAL_SINGLE) {
+      if (!materialId) {
+        throw new HttpException('单个支付需传入 materialId', HttpStatus.BAD_REQUEST);
+      }
+      const material = await this.materialsRepository.findOne({
+        where: { id: materialId },
+        relations: ['order'],
+      });
+      if (!material) {
+        throw new HttpException('辅材不存在', HttpStatus.NOT_FOUND);
+      }
+      if (material.is_paid) {
+        throw new HttpException('该辅材已支付', HttpStatus.BAD_REQUEST);
+      }
+      if (material.order.order_status === OrderStatus.CANCELLED) {
+        throw new HttpException('订单已取消，无法支付', HttpStatus.BAD_REQUEST);
+      }
+      materials = [material];
+    } else {
+      if (!materialsIds?.length) {
+        throw new HttpException('批量支付需传入 materialsIds', HttpStatus.BAD_REQUEST);
+      }
+      materials = await this.materialsRepository.find({
+        where: { id: In(materialsIds) },
+        relations: ['order'],
+      });
+      const foundIds = materials.map((m) => m.id);
+      const notFound = materialsIds.filter((id) => !foundIds.includes(id));
+      if (notFound.length > 0) {
+        throw new HttpException(
+          `辅材ID不存在: ${notFound.join(', ')}`,
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      const orderIds = [...new Set(materials.map((m) => m.orderId))];
+      if (orderIds.length > 1) {
+        throw new HttpException(
+          '所选辅材必须属于同一订单',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      if (materials.some((m) => m.order.order_status === OrderStatus.CANCELLED)) {
+        throw new HttpException('订单已取消，无法支付', HttpStatus.BAD_REQUEST);
+      }
+      const unpaid = materials.filter((m) => !m.is_paid);
+      if (unpaid.length === 0) {
+        throw new HttpException('所选辅材均已支付', HttpStatus.BAD_REQUEST);
+      }
+      materials = unpaid;
+    }
+
+    const resolvedOrderId = materials[0].orderId;
+    const totalAmount = materials
+      .reduce(
+        (sum, m) => sum.plus(m.settlement_amount),
+        new Decimal(0),
+      )
+      .toDecimalPlaces(2)
+      .toNumber();
+
+    const description =
+      pay_type === WX_PAY_CONFIG.payType.MATERIAL_SINGLE
+        ? `辅材-${materials[0].commodity_name}`
+        : `辅材批量支付-订单${resolvedOrderId}`;
+
+    return { materials, totalAmount, description, orderId: resolvedOrderId };
   }
 
   /**
@@ -320,7 +414,8 @@ export class MaterialsService {
 
   /**
    * 一键支付：批量确认订单下所有未支付的辅材
-   * @param orderId 订单ID
+   * 支持工长订单：当传入工长订单ID时，会支付该工长订单下所有工匠订单的未支付辅材
+   * @param orderId 订单ID（工长订单或工匠订单）
    * @returns null，由全局拦截器包装成标准响应
    */
   async batchConfirmPaymentByOrderId(orderId: number): Promise<null> {
@@ -342,10 +437,27 @@ export class MaterialsService {
         );
       }
 
-      // 3. 查找该订单下所有未支付的辅材
+      // 3. 确定要查询的订单ID列表（支持工长订单拆分场景）
+      let targetOrderIds: number[];
+      if (order.parent_order_id === null || order.parent_order_id === undefined) {
+        // 工长订单：查找所有子工匠订单
+        const craftsmanOrders = await this.orderRepository.find({
+          where: { parent_order_id: orderId },
+          select: ['id'],
+        });
+        targetOrderIds =
+          craftsmanOrders.length > 0
+            ? craftsmanOrders.map((o) => o.id)
+            : [orderId]; // 若无子订单，则用自身（可能工长订单下暂无分配）
+      } else {
+        // 工匠订单：只处理当前订单
+        targetOrderIds = [orderId];
+      }
+
+      // 4. 查找这些订单下所有未支付的辅材
       const unpaidMaterials = await this.materialsRepository.find({
         where: {
-          orderId: orderId,
+          orderId: In(targetOrderIds),
           is_paid: false,
         },
         relations: ['order'],
@@ -358,14 +470,14 @@ export class MaterialsService {
         );
       }
 
-      // 4. 批量更新支付状态
+      // 5. 批量更新支付状态
       unpaidMaterials.forEach((material) => {
         material.is_paid = true;
       });
 
       await this.materialsRepository.save(unpaidMaterials);
 
-      // 5. 为每个辅材创建平台收支记录
+      // 6. 为每个辅材创建平台收支记录
       const recordPromises = unpaidMaterials.map((material) => {
         return this.platformIncomeRecordService
           .create({
@@ -385,7 +497,7 @@ export class MaterialsService {
 
       await Promise.all(recordPromises);
 
-      // 6. 返回null，全局拦截器会自动包装成标准响应
+      // 7. 返回null，全局拦截器会自动包装成标准响应
       return null;
     } catch (error) {
       if (error instanceof HttpException) {
@@ -394,6 +506,104 @@ export class MaterialsService {
       console.error('一键支付辅材失败:', error);
       throw new HttpException(
         '一键支付辅材失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 一键支付：按辅材ID列表批量确认支付（参考验收逻辑）
+   * @param materialsIds 辅材ID列表（未支付的辅材ID）
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  async batchConfirmPaymentByMaterialsIds(materialsIds: number[]): Promise<null> {
+    try {
+      // 1. 查找所有指定的辅材
+      const materials = await this.materialsRepository.find({
+        where: { id: In(materialsIds) },
+        relations: ['order'],
+      });
+
+      if (!materials || materials.length === 0) {
+        throw new HttpException('未找到指定的辅材', HttpStatus.NOT_FOUND);
+      }
+
+      // 2. 检查是否有不存在的辅材ID
+      const foundIds = materials.map((m) => m.id);
+      const notFoundIds = materialsIds.filter((id) => !foundIds.includes(id));
+      if (notFoundIds.length > 0) {
+        throw new HttpException(
+          `以下辅材ID不存在: ${notFoundIds.join(', ')}`,
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // 3. 筛选可支付的辅材（订单未取消、未支付）
+      const invalidMaterials: string[] = [];
+      const validMaterials: Materials[] = [];
+
+      for (const material of materials) {
+        if (material.order.order_status === OrderStatus.CANCELLED) {
+          invalidMaterials.push(
+            `辅材ID ${material.id}: 订单已取消，无法进行支付操作`,
+          );
+          continue;
+        }
+        if (material.is_paid === true) {
+          invalidMaterials.push(
+            `辅材ID ${material.id}: 辅材已支付，无法重复支付`,
+          );
+          continue;
+        }
+        validMaterials.push(material);
+      }
+
+      if (invalidMaterials.length > 0) {
+        throw new HttpException(
+          invalidMaterials.join('; '),
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      if (validMaterials.length === 0) {
+        throw new HttpException(
+          '没有可以支付的辅材',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 4. 批量更新支付状态
+      validMaterials.forEach((material) => {
+        material.is_paid = true;
+      });
+      await this.materialsRepository.save(validMaterials);
+
+      // 5. 为每个辅材创建平台收支记录
+      const recordPromises = validMaterials.map((material) =>
+        this.platformIncomeRecordService
+          .create({
+            orderId: material.orderId,
+            order_no: material.order.order_no,
+            cost_type: CostType.MATERIALS,
+            cost_amount: Number(material.settlement_amount),
+          })
+          .catch((recordError) => {
+            console.error(
+              `创建平台收支记录失败 (辅材ID: ${material.id}):`,
+              recordError,
+            );
+          }),
+      );
+      await Promise.all(recordPromises);
+
+      return null;
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      console.error('批量支付辅材失败:', error);
+      throw new HttpException(
+        '批量支付辅材失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

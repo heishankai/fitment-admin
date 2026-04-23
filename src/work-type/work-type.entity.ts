@@ -15,6 +15,10 @@ export class WorkType {
   @Column()
   work_title: string;
 
+  // 描述
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
   // 工种价格
   @Column({ type: 'varchar', length: 50 })
   work_price: any;
@@ -42,8 +46,8 @@ export class WorkType {
   // 工种
   @Column({ type: 'json', nullable: true })
   work_kind: {
-    label: string;
-    value: string | number;
+    work_kind_name: string;
+    work_kind_code: string;
   };
 
   // 人工成本

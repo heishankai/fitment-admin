@@ -6,22 +6,6 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-/**
- * 房屋类型枚举
- */
-export enum HouseType {
-  NEW = 'new', // 新房
-  OLD = 'old', // 老房
-}
-
-/**
- * 房屋类型名称映射
- */
-export const HouseTypeNameMap: Record<HouseType, string> = {
-  [HouseType.NEW]: '新房',
-  [HouseType.OLD]: '老房',
-};
-
 @Entity('get_price')
 export class GetPrice {
   @PrimaryGeneratedColumn()
@@ -31,13 +15,9 @@ export class GetPrice {
   @Column({ type: 'varchar', length: 50 })
   area: string;
 
-  // 房屋类型：new（新房）或 old（老房）
-  @Column({ type: 'varchar', length: 10 })
+  // 房屋类型（字符串，如：新房、老房、new、old 等）
+  @Column({ type: 'varchar', length: 50 })
   houseType: string;
-
-  // 房屋类型名称：新房 或 老房
-  @Column({ type: 'varchar', length: 20 })
-  houseTypeName: string;
 
   // 位置（详细地址）
   @Column({ type: 'varchar', length: 500 })

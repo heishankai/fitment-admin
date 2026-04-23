@@ -1,12 +1,23 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Injectable,
+  HttpException,
+  HttpStatus,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
+import Decimal from 'decimal.js';
 import { WorkPriceItem } from './work-price-item.entity';
-import { Order } from '../order/order.entity';
+import { Order, OrderStatus } from '../order/order.entity';
+import { WX_PAY_CONFIG } from '../common/constants/app.constants';
 import { CreateWorkPriceItemsDto } from './dto/create-work-price-items.dto';
 import { Materials } from '../materials/materials.entity';
 import { MaterialsResponseDto, CommodityItemResponse } from '../materials/dto/materials-response.dto';
 import { ConstructionProgressService } from '../construction-progress/construction-progress.service';
+import { OrderService } from '../order/order.service';
+import { PlatformIncomeRecordService } from '../platform-income-record/platform-income-record.service';
+import { CostType } from '../platform-income-record/platform-income-record.entity';
 
 @Injectable()
 export class WorkPriceItemService {
@@ -18,7 +29,163 @@ export class WorkPriceItemService {
     @InjectRepository(Materials)
     private readonly materialsRepository: Repository<Materials>,
     private readonly constructionProgressService: ConstructionProgressService,
+    @Inject(forwardRef(() => OrderService))
+    private readonly orderService: OrderService,
+    private readonly platformIncomeRecordService: PlatformIncomeRecordService,
   ) {}
+
+  /**
+   * 按订单查询主工价 + 子工价（工匠订单场景：独立工匠单或分配工匠单均包含父工价组与子工价组）
+   * 分配工匠单：从父订单取「分配给当前接单工匠」的工价项，再按 work_group_id 拆成主/子
+   */
+  async getWorkPricesByOrderId(orderId: number): Promise<any> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: ['craftsman_user'],
+    });
+    if (!order) {
+      throw new HttpException('订单不存在', HttpStatus.NOT_FOUND);
+    }
+
+    let allWorkItems: WorkPriceItem[];
+    if (order.parent_order_id && order.craftsman_user_id) {
+      allWorkItems = await this.workPriceItemRepository.find({
+        where: {
+          order_id: order.parent_order_id,
+          assigned_craftsman_id: order.craftsman_user_id,
+        },
+        relations: ['assigned_craftsman'],
+        order: { createdAt: 'ASC' },
+      });
+    } else {
+      allWorkItems = await this.workPriceItemRepository.find({
+        where: { order_id: orderId },
+        relations: ['assigned_craftsman'],
+        order: { createdAt: 'ASC' },
+      });
+    }
+
+    const mainItems = allWorkItems.filter(
+      (i) => !i.work_group_id || i.work_group_id === 1,
+    );
+    const subItems = allWorkItems.filter(
+      (i) => i.work_group_id && i.work_group_id > 1,
+    );
+
+    const toPlain = (item: WorkPriceItem) => ({
+      ...item,
+      current_order_id: orderId,
+    });
+
+    const mainGroup =
+      mainItems.length > 0
+        ? {
+            current_order_id: orderId,
+            parent_order_id: order.parent_order_id || null,
+            items: mainItems.map(toPlain),
+            total_price: mainItems.reduce(
+              (s, i) => s + i.calculateSettlementAmount(),
+              0,
+            ),
+            total_is_accepted: mainItems.every((i) => i.is_accepted),
+            is_paid: mainItems.every((i) => i.is_paid),
+            gangmaster_cost:
+              order.order_type === 'gangmaster'
+                ? Number(order.gangmaster_cost) || 0
+                : undefined,
+            visiting_service_num:
+              order.order_type === 'gangmaster'
+                ? order.visiting_service_num
+                : undefined,
+            total_service_fee: Number(order.total_service_fee) || 0,
+          }
+        : null;
+
+    const groupMap = new Map<number, WorkPriceItem[]>();
+    for (const i of subItems) {
+      const gid = i.work_group_id!;
+      if (!groupMap.has(gid)) groupMap.set(gid, []);
+      groupMap.get(gid)!.push(i);
+    }
+    const subGroups = Array.from(groupMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([groupId, items]) => {
+        const total_price = items.reduce(
+          (s, i) => s + (Number(i.settlement_amount) || 0),
+          0,
+        );
+        return {
+          work_group_id: groupId,
+          current_order_id: orderId,
+          parent_order_id: order.parent_order_id || null,
+          items: items.map(toPlain),
+          total_price,
+          total_is_accepted: items.every((i) => i.is_accepted),
+          is_paid: items.every((i) => i.is_paid),
+          total_service_fee: total_price * 0.1,
+        };
+      });
+
+    return {
+      order_id: orderId,
+      order_type: order.order_type || null,
+      is_assigned: !!order.parent_order_id,
+      parent_order_id: order.parent_order_id || null,
+      main_work_price_group: mainGroup,
+      sub_work_price_groups: subGroups,
+    };
+  }
+
+  /**
+   * 将 work_price_item_ids 中的工价项全部验收（委托 OrderService，与单条验收业务一致）
+   */
+  async batchAcceptByWorkPriceItemIds(
+    workPriceItemIds: number[],
+  ): Promise<null> {
+    return this.orderService.batchAcceptWorkPriceItemsByIds(workPriceItemIds);
+  }
+
+  /**
+   * 根据工价项ID + 工匠ID，解析其「分配工匠订单」，返回该工匠单下全部工价（主工价 + 子工价，结构同 getWorkPricesByOrderId）
+   */
+  async getWorkPricesByWorkPriceItemAndCraftsman(
+    workPriceItemId: number,
+    craftsmanId: number,
+  ): Promise<any> {
+    const item = await this.workPriceItemRepository.findOne({
+      where: { id: workPriceItemId },
+      relations: ['order'],
+    });
+    if (!item) {
+      throw new HttpException('工价项不存在', HttpStatus.NOT_FOUND);
+    }
+    if (item.assigned_craftsman_id !== craftsmanId) {
+      throw new HttpException('无权查看此工价', HttpStatus.FORBIDDEN);
+    }
+
+    let craftsmanOrderId: number;
+
+    if (item.order?.parent_order_id == null) {
+      const craftsmanOrder = await this.orderRepository.findOne({
+        where: {
+          parent_order_id: item.order_id,
+          craftsman_user_id: craftsmanId,
+          is_assigned: true,
+        },
+      });
+      if (!craftsmanOrder) {
+        throw new HttpException(
+          '尚未生成分配工匠订单，无法查询该工匠全部工价',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      craftsmanOrderId = craftsmanOrder.id;
+    } else {
+      craftsmanOrderId = item.order_id;
+    }
+
+    return this.getWorkPricesByOrderId(craftsmanOrderId);
+  }
 
   /**
    * 根据订单ID查询工价项列表
@@ -575,7 +742,7 @@ export class WorkPriceItemService {
               ? parseFloat(item.quantity)
               : item.quantity,
           work_kind_name: item.work_kind_name,
-          work_kind_id: item.work_kind_id,
+          work_kind_code: item.work_kind_code,
           labour_cost_name: item.labour_cost_name,
           minimum_price: item.minimum_price || null,
           is_set_minimum_price: item.is_set_minimum_price,
@@ -858,4 +1025,420 @@ export class WorkPriceItemService {
       );
     }
   }
+
+  /**
+   * 工价项支付预览（微信下单前校验金额）
+   */
+  async getWorkPricePaymentPreview(params: {
+    pay_type:
+      | (typeof WX_PAY_CONFIG.payType)['WORK_PRICE_SINGLE']
+      | (typeof WX_PAY_CONFIG.payType)['WORK_PRICE_BATCH'];
+    workPriceItemId?: number;
+    workPriceItemIds?: number[];
+  }): Promise<{
+    items: WorkPriceItem[];
+    totalAmount: number;
+    description: string;
+    orderId: number;
+  }> {
+    const { pay_type, workPriceItemId, workPriceItemIds } = params;
+
+    let items: WorkPriceItem[];
+    if (pay_type === WX_PAY_CONFIG.payType.WORK_PRICE_SINGLE) {
+      if (!workPriceItemId) {
+        throw new HttpException(
+          '单个支付需传入 workPriceItemId',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      const item = await this.workPriceItemRepository.findOne({
+        where: { id: workPriceItemId },
+        relations: ['order'],
+      });
+      if (!item) {
+        throw new HttpException('工价项不存在', HttpStatus.NOT_FOUND);
+      }
+      const singleTwins = await this.collectAssignedTwinWorkPriceItems(item);
+      if (
+        singleTwins.some((t) => t.order?.order_status === OrderStatus.CANCELLED)
+      ) {
+        throw new HttpException('订单已取消，无法支付', HttpStatus.BAD_REQUEST);
+      }
+      if (singleTwins.some((t) => t.is_paid)) {
+        throw new HttpException(
+          '该工价（含父/子单关联记录）已支付',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      items = [item];
+    } else {
+      if (!workPriceItemIds?.length) {
+        throw new HttpException(
+          '批量支付需传入 workPriceItemIds',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      items = await this.workPriceItemRepository.find({
+        where: { id: In(workPriceItemIds) },
+        relations: ['order'],
+      });
+      const foundIds = items.map((i) => i.id);
+      const notFound = workPriceItemIds.filter((id) => !foundIds.includes(id));
+      if (notFound.length > 0) {
+        throw new HttpException(
+          `工价项ID不存在: ${notFound.join(', ')}`,
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      const orderIds = [...new Set(items.map((i) => i.order_id))];
+      if (orderIds.length > 1) {
+        throw new HttpException(
+          '所选工价项必须属于同一订单',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      for (const i of items) {
+        const g = await this.collectAssignedTwinWorkPriceItems(i);
+        if (g.some((t) => t.order?.order_status === OrderStatus.CANCELLED)) {
+          throw new HttpException('订单已取消，无法支付', HttpStatus.BAD_REQUEST);
+        }
+        if (g.some((t) => t.is_paid)) {
+          throw new HttpException(
+            `工价项 ${i.id}（含父/子单关联）已支付，无法重复支付`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
+      const unpaid = items.filter((i) => !i.is_paid);
+      if (unpaid.length === 0) {
+        throw new HttpException('所选工价项均已支付', HttpStatus.BAD_REQUEST);
+      }
+      items = unpaid;
+    }
+
+    const resolvedOrderId = items[0].order_id;
+    const totalAmount = items
+      .reduce(
+        (sum, i) => sum.plus(i.settlement_amount ?? i.calculateSettlementAmount()),
+        new Decimal(0),
+      )
+      .toDecimalPlaces(2)
+      .toNumber();
+
+    const description =
+      pay_type === WX_PAY_CONFIG.payType.WORK_PRICE_SINGLE
+        ? `工价-${items[0].work_title}`
+        : `工价批量支付-订单${resolvedOrderId}`;
+
+    return { items, totalAmount, description, orderId: resolvedOrderId };
+  }
+
+  /**
+   * 分配工匠后：父单工价项与子单副本是两条记录（不同 id）。
+   * 支付需把这一组视为同一笔工价，预览/回调都按「组」处理。
+   */
+  private async collectAssignedTwinWorkPriceItems(
+    item: WorkPriceItem,
+  ): Promise<WorkPriceItem[]> {
+    const withOrder =
+      item.order != null
+        ? item
+        : await this.workPriceItemRepository.findOne({
+            where: { id: item.id },
+            relations: ['order'],
+          });
+    if (!withOrder?.order) {
+      return [withOrder || item];
+    }
+
+    const byId = new Map<number, WorkPriceItem>();
+    const add = (w: WorkPriceItem | null) => {
+      if (w) byId.set(w.id, w);
+    };
+    add(withOrder);
+
+    const ord = withOrder.order;
+
+    if (ord.parent_order_id != null && ord.craftsman_user_id != null) {
+      const parentRow = await this.workPriceItemRepository.findOne({
+        where: {
+          order_id: ord.parent_order_id,
+          work_price_id: withOrder.work_price_id,
+          assigned_craftsman_id: ord.craftsman_user_id,
+        },
+        relations: ['order'],
+      });
+      add(parentRow);
+      return [...byId.values()];
+    }
+
+    if (withOrder.assigned_craftsman_id) {
+      const childOrders = await this.orderRepository.find({
+        where: {
+          parent_order_id: ord.id,
+          craftsman_user_id: withOrder.assigned_craftsman_id,
+          is_assigned: true,
+        },
+        select: ['id'],
+      });
+      for (const co of childOrders) {
+        const copy = await this.workPriceItemRepository.findOne({
+          where: {
+            order_id: co.id,
+            work_price_id: withOrder.work_price_id,
+          },
+          relations: ['order'],
+        });
+        add(copy);
+      }
+    }
+
+    return [...byId.values()];
+  }
+
+  /**
+   * 微信回调：按工价项 id 定位，并把父/子关联行一并标记已付（幂等）
+   */
+  async confirmPaymentByWorkPriceItemId(workPriceItemId: number): Promise<null> {
+    const id = Number(workPriceItemId);
+    if (!Number.isFinite(id)) {
+      throw new HttpException('工价项ID无效', HttpStatus.BAD_REQUEST);
+    }
+    const item = await this.workPriceItemRepository.findOne({
+      where: { id },
+      relations: ['order'],
+    });
+    if (!item) {
+      throw new HttpException('工价项不存在', HttpStatus.NOT_FOUND);
+    }
+
+    const twins = await this.collectAssignedTwinWorkPriceItems(item);
+    for (const t of twins) {
+      if (t.order?.order_status === OrderStatus.CANCELLED) {
+        throw new HttpException(
+          '订单已取消，无法进行支付操作',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    }
+
+    const unpaid = twins.filter((t) => !t.is_paid);
+    if (unpaid.length === 0) {
+      return null;
+    }
+    unpaid.forEach((t) => {
+      t.is_paid = true;
+    });
+    await this.workPriceItemRepository.save(unpaid);
+    return null;
+  }
+
+  /**
+   * 微信回调：批量；每条 id 展开为父/子组后去重，再统一标记已付（幂等）
+   */
+  async batchConfirmPaymentByWorkPriceItemIds(
+    workPriceItemIds: number[],
+  ): Promise<null> {
+    const items = await this.workPriceItemRepository.find({
+      where: { id: In(workPriceItemIds) },
+      relations: ['order'],
+    });
+    if (!items?.length) {
+      throw new HttpException('未找到指定的工价项', HttpStatus.NOT_FOUND);
+    }
+    const foundIds = items.map((i) => i.id);
+    const notFoundIds = workPriceItemIds.filter((id) => !foundIds.includes(id));
+    if (notFoundIds.length > 0) {
+      throw new HttpException(
+        `以下工价项ID不存在: ${notFoundIds.join(', ')}`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const expandedIds = new Set<number>();
+    for (const i of items) {
+      const twins = await this.collectAssignedTwinWorkPriceItems(i);
+      for (const t of twins) expandedIds.add(t.id);
+    }
+
+    const expanded = await this.workPriceItemRepository.find({
+      where: { id: In([...expandedIds]) },
+      relations: ['order'],
+    });
+
+    for (const t of expanded) {
+      if (t.order.order_status === OrderStatus.CANCELLED) {
+        throw new HttpException(
+          `工价项ID ${t.id}: 订单已取消，无法进行支付操作`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    }
+
+    const unpaid = expanded.filter((t) => !t.is_paid);
+    if (unpaid.length === 0) {
+      return null;
+    }
+    unpaid.forEach((t) => {
+      t.is_paid = true;
+    });
+    await this.workPriceItemRepository.save(unpaid);
+    return null;
+  }
+
+  /**
+   * 子工价平台服务费：微信预下单（按工价项 id 列表，金额=各条 total_service_fee 之和）
+   */
+  async getSubWorkPriceServiceFeePaymentPreview(workPriceItemIds: number[]): Promise<{
+    items: WorkPriceItem[];
+    totalAmount: number;
+    description: string;
+    orderId: number;
+  }> {
+    if (!workPriceItemIds?.length) {
+      throw new HttpException(
+        '批量支付需传入 workPriceItemIds',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const items = await this.workPriceItemRepository.find({
+      where: { id: In(workPriceItemIds) },
+      relations: ['order'],
+    });
+    const foundIds = items.map((i) => i.id);
+    const notFound = workPriceItemIds.filter((id) => !foundIds.includes(id));
+    if (notFound.length > 0) {
+      throw new HttpException(
+        `工价项ID不存在: ${notFound.join(', ')}`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const orderIds = [...new Set(items.map((i) => i.order_id))];
+    if (orderIds.length > 1) {
+      throw new HttpException(
+        '所选工价项必须属于同一订单',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    for (const i of items) {
+      if (!i.work_group_id || i.work_group_id <= 1) {
+        throw new HttpException(
+          `工价项 ${i.id} 非子工价（work_group_id>1），不能按子工价平台服务费支付`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      const group = await this.collectAssignedTwinWorkPriceItems(i);
+      if (group.some((t) => t.order?.order_status === OrderStatus.CANCELLED)) {
+        throw new HttpException('订单已取消，无法支付', HttpStatus.BAD_REQUEST);
+      }
+      if (group.some((t) => t.total_service_fee_is_paid)) {
+        throw new HttpException(
+          `工价项 ${i.id}（含父/子关联）的平台服务费已支付`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    }
+
+    // 服务费为 0 的项不参与金额汇总，回调时仍会把 total_service_fee_is_paid 置为 true
+    const totalAmount = items
+      .reduce((sum, i) => {
+        let fee = i.total_service_fee;
+        if (!fee || Number(fee) === 0) {
+          fee = i.calculateServiceFee();
+        }
+        const n = Number(fee) || 0;
+        if (n >= 0.01) {
+          return sum.plus(n);
+        }
+        return sum;
+      }, new Decimal(0))
+      .toDecimalPlaces(2)
+      .toNumber();
+
+    const orderId = items[0].order_id;
+    const description = `子工价平台服务费-订单${orderId}`;
+
+    return { items, totalAmount, description, orderId };
+  }
+
+  /**
+   * 微信回调：子工价平台服务费已付（父/子关联行一并处理，幂等）
+   */
+  async batchConfirmSubWorkPriceServiceFeeByWorkPriceItemIds(
+    workPriceItemIds: number[],
+  ): Promise<null> {
+    const items = await this.workPriceItemRepository.find({
+      where: { id: In(workPriceItemIds) },
+      relations: ['order'],
+    });
+    if (!items?.length) {
+      throw new HttpException('未找到指定的工价项', HttpStatus.NOT_FOUND);
+    }
+    const foundIds = items.map((i) => i.id);
+    const notFoundIds = workPriceItemIds.filter((id) => !foundIds.includes(id));
+    if (notFoundIds.length > 0) {
+      throw new HttpException(
+        `以下工价项ID不存在: ${notFoundIds.join(', ')}`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const expandedIds = new Set<number>();
+    for (const i of items) {
+      const twins = await this.collectAssignedTwinWorkPriceItems(i);
+      for (const t of twins) expandedIds.add(t.id);
+    }
+
+    const expanded = await this.workPriceItemRepository.find({
+      where: { id: In([...expandedIds]) },
+      relations: ['order'],
+    });
+
+    for (const t of expanded) {
+      if (t.order.order_status === OrderStatus.CANCELLED) {
+        throw new HttpException(
+          `工价项ID ${t.id}: 订单已取消，无法进行支付操作`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    }
+
+    const toSave: WorkPriceItem[] = [];
+    for (const row of expanded) {
+      if (!row.work_group_id || row.work_group_id <= 1) {
+        continue;
+      }
+      if (row.total_service_fee_is_paid) {
+        continue;
+      }
+      if (!row.total_service_fee || Number(row.total_service_fee) === 0) {
+        row.total_service_fee = row.calculateServiceFee();
+      }
+      const fee = Number(row.total_service_fee) || 0;
+      row.total_service_fee_is_paid = true;
+      toSave.push(row);
+      if (fee >= 0.01) {
+        try {
+          await this.platformIncomeRecordService.create({
+            orderId: row.order_id,
+            order_no: row.order.order_no,
+            cost_type: CostType.SERVICE_FEE,
+            cost_amount: fee,
+          });
+        } catch (recordError) {
+          console.error(
+            `[子工价服务费] 创建平台收支记录失败 workPriceItemId=${row.id}:`,
+            recordError,
+          );
+        }
+      }
+    }
+
+    if (toSave.length > 0) {
+      await this.workPriceItemRepository.save(toSave);
+    }
+    return null;
+  }
 }
+

@@ -5,6 +5,10 @@ import {
 
 export class CreateWorkKindDto {
   @IsString()
+  @IsNotEmpty({ message: '工种编码不能为空' })
+  work_kind_code: string; // 工种编码
+
+  @IsString()
   @IsNotEmpty({ message: '工种名称不能为空' })
   work_kind_name: string; // 工种名称
 }

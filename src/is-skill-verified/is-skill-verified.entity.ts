@@ -23,13 +23,21 @@ export class IsSkillVerified {
   @Column({ type: 'json', nullable: true })
   operation_video: Array<{ url: string }>;
 
-  // 工种ID
-  @Column({ nullable: true })
-  workKindId: string;
+  // 工种编码
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  work_kind_code: string;
 
   // 工种名称
-  @Column({ nullable: true })
-  workKindName: string;
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  work_kind_name: string;
+
+  // 从业年限
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  work_years: string;
+
+  // 技能介绍
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  skill_intro: string;
 
   // 创建时间
   @CreateDateColumn()

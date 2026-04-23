@@ -16,6 +16,7 @@ import { WalletTransactionModule } from '../wallet-transaction/wallet-transactio
 import { WorkPriceItemModule } from '../work-price-item/work-price-item.module';
 import { PlatformIncomeRecordModule } from '../platform-income-record/platform-income-record.module';
 import { SmsModule } from '../sms/sms.module';
+import { SmsNotifyConfigModule } from '../sms-notify-config/sms-notify-config.module';
 import { ConstructionProgressModule } from '../construction-progress/construction-progress.module';
 import { MaterialsModule } from '../materials/materials.module';
 
@@ -29,7 +30,7 @@ import { MaterialsModule } from '../materials/materials.module';
       WorkPriceItem,
       Materials,
     ]),
-    WorkPriceItemModule,
+    forwardRef(() => WorkPriceItemModule),
     JwtModule.register({
       secret: JWT_CONFIG.secret,
       signOptions: { expiresIn: JWT_CONFIG.expiresIn },
@@ -38,6 +39,7 @@ import { MaterialsModule } from '../materials/materials.module';
     WalletTransactionModule,
     PlatformIncomeRecordModule,
     SmsModule, // 导入短信模块以发送订单通知
+    SmsNotifyConfigModule, // 客服短信通知配置与下单/超时提醒
     ConstructionProgressModule, // 导入施工进度模块
     forwardRef(() => MaterialsModule),
   ],

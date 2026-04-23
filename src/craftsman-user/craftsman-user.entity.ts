@@ -30,9 +30,6 @@ export class CraftsmanUser {
   @Column({ nullable: true, default: false })
   isSkillVerified: boolean;
 
-  @Column({ nullable: true, default: false })
-  isHomePageVerified: boolean;
-
   @Column({
     type: 'decimal',
     precision: 12,

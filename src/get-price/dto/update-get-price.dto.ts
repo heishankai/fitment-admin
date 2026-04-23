@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsIn } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 
 /**
  * 更新获取报价DTO
@@ -12,20 +12,11 @@ export class UpdateGetPriceDto {
   area?: string;
 
   /**
-   * 房屋类型：new（新房）或 old（老房）
+   * 房屋类型（字符串）
    */
   @IsOptional()
   @IsString({ message: '房屋类型必须是字符串' })
-  @IsIn(['new', 'old'], { message: '房屋类型必须是 new 或 old' })
   houseType?: string;
-
-  /**
-   * 房屋类型名称：新房 或 老房
-   */
-  @IsOptional()
-  @IsString({ message: '房屋类型名称必须是字符串' })
-  @IsIn(['新房', '老房'], { message: '房屋类型名称必须是 新房 或 老房' })
-  houseTypeName?: string;
 
   /**
    * 位置（详细地址）

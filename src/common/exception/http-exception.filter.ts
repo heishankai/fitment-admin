@@ -28,9 +28,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message = errorMessage;
     } else {
       const errorObj = errorMessage as any;
-      // 处理验证错误：如果 message 是数组，转换为字符串
+      // 处理验证错误：只返回第一个错误，避免一次性返回所有校验失败信息
       if (Array.isArray(errorObj?.message)) {
-        message = errorObj.message.join('; ');
+        message = errorObj.message[0] || '参数校验失败';
       } else {
         message = errorObj?.message || '接口错误，请刷新稍后重试';
       }

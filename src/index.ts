@@ -2,7 +2,9 @@
 export { UserModule } from './user/user.module';
 export { AuthModule } from './auth/auth.module';
 export { SmsModule } from './sms/sms.module';
+export { SmsNotifyConfigModule } from './sms-notify-config/sms-notify-config.module';
 export { WechatUserModule } from './wechat-user/wechat-user.module';
+export { CraftWechatUserModule } from './craft-wechat-user/craft-wechat-user.module';
 export { WechatAddressModule } from './wechat-address/wechat-address.module';
 export { CaseQueryModule } from './case-query/case-query.module';
 export { CityModule } from './city/city.module';
@@ -37,3 +39,5 @@ export { WorkPriceItemModule } from './work-price-item/work-price-item.module';
 export { GetPriceModule } from './get-price/get-price.module';
 export { WelcomeModule } from './welcome/welcome.module';
 export { ActivityModule } from './activity/activity.module';
+export { WxPayModule } from './wx-pay/wx-pay.module';
+export { StudentModule } from './student/student.module';

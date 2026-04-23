@@ -13,7 +13,9 @@ import {
   UserModule,
   AuthModule,
   SmsModule,
+  SmsNotifyConfigModule,
   WechatUserModule,
+  CraftWechatUserModule,
   WechatAddressModule,
   CaseQueryModule,
   CityModule,
@@ -47,12 +49,12 @@ import {
   GetPriceModule,
   WelcomeModule,
   ActivityModule,
+  WxPayModule,
+  StudentModule,
 } from './index';
 // 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
 import { WstModule } from './wst/wst.module';
-import { OrderAccessFeeModule } from './order-access-fee/order-access-fee.module';
-import { WxPayModule } from './common/wx-pay/wx-pay.module';
 
 /**
  * 应用程序的根模块
@@ -73,11 +75,12 @@ import { WxPayModule } from './common/wx-pay/wx-pay.module';
     UserModule, // 用户模块
     AuthModule, // 权限模块
     SmsModule, // 短信模块
+    SmsNotifyConfigModule, // 客服短信通知号码与场景发送
     UploadModule, // 公共文件上传模块
     GeolocationModule, // 地理位置模块
     WechatUserModule, // 微信用户模块
+    CraftWechatUserModule, // 工匠端微信小程序用户模块
     WechatAddressModule, // 微信地址模块
-    WxPayModule, // 微信支付模块
     CaseQueryModule, // 案例查询模块
     CityModule, // 城市模块
     CategoryConfigModule, // 类目配置模块
@@ -95,7 +98,7 @@ import { WxPayModule } from './common/wx-pay/wx-pay.module';
     CraftsmanWechatChatModule, // 工匠-微信用户聊天模块
     PlatformNoticeModule, // 平台公告模块
     SystemNotificationModule, // 系统通知模块
-  AdminNotificationModule, // 管理员通知模块
+    AdminNotificationModule, // 管理员通知模块
     OrderModule, // 订单模块
     WalletModule, // 钱包模块
     CraftsmanBankCardModule, // 工匠银行卡模块
@@ -103,7 +106,6 @@ import { WxPayModule } from './common/wx-pay/wx-pay.module';
     WalletTransactionModule, // 账户明细模块
     HomeModule, // 首页统计模块
     IndependentPageConfigModule, // 独立页面配置模块
-    OrderAccessFeeModule, // 下单准入模块
     ConstructionProgressModule, // 施工进度模块
     MaterialsModule, // 辅材模块
     PlatformIncomeRecordModule, // 平台收支记录模块
@@ -111,6 +113,8 @@ import { WxPayModule } from './common/wx-pay/wx-pay.module';
     GetPriceModule, // 获取报价模块
     WelcomeModule, // 欢迎页配置模块
     ActivityModule, // 活动模块
+    WxPayModule, // 微信支付模块
+    StudentModule, // 学生模块
   ],
   // 导入其他模块的数组
   controllers: [AppController], // 注册控制器，处理 HTTP 请求

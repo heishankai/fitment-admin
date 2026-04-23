@@ -29,8 +29,8 @@ export class CommodityConfig {
   @Column({ length: 800 })
   commodity_description: string; // 商品描述（最多800字）
 
-  @Column({ length: 800 })
-  service_guarantee: string; // 服务保障（最多800字）
+  @Column({ length: 800, nullable: true })
+  service_guarantee?: string; // 服务保障（最多800字）
 
   @Column('simple-json')
   commodity_cover: string[]; // 商品封面（1张 数组类型）

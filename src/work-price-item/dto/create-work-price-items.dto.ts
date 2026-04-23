@@ -38,9 +38,9 @@ export class WorkPriceItemDto {
   @IsString()
   work_kind_name: string;
 
-  @IsNotEmpty({ message: '工种ID不能为空' })
-  @IsNumber()
-  work_kind_id: number;
+  @IsNotEmpty({ message: '工种编码不能为空' })
+  @IsString()
+  work_kind_code: string;
 
   @IsNotEmpty({ message: '单位名称不能为空' })
   @IsString()

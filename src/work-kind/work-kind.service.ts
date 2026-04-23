@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { WorkKind } from './work-kind.entity';
 import { CreateWorkKindDto } from './dto/create-work-kind.dto';
 import { QueryWorkKindDto } from './dto/query-work-kind.dto';
@@ -21,6 +21,7 @@ export class WorkKindService {
     try {
       const workKinds = await this.workKindRepository.find({
         order: {
+          sortOrder: 'ASC',
           createdAt: 'DESC',
         },
       });
@@ -54,8 +55,9 @@ export class WorkKindService {
         });
       }
 
-      // 按创建时间倒序排列
-      query.orderBy('work_kind.createdAt', 'DESC');
+      // 按排序字段优先，再按创建时间倒序兜底
+      query.orderBy('work_kind.sortOrder', 'ASC');
+      query.addOrderBy('work_kind.createdAt', 'DESC');
 
       // 查询总数
       const total = await query.getCount();
@@ -185,6 +187,54 @@ export class WorkKindService {
         throw error;
       }
       throw new BadRequestException('删除工种配置失败: ' + error.message);
+    }
+  }
+
+  /**
+   * 更新工种配置排序（拖拽排序）
+   * @param ids 排序后的工种ID数组，数组顺序即为排序顺序
+   * @returns null，由全局拦截器包装成标准响应
+   */
+  async updateSort(ids: number[]): Promise<null> {
+    try {
+      if (!Array.isArray(ids) || ids.length === 0) {
+        throw new BadRequestException('排序ID数组不能为空');
+      }
+
+      // 防止重复ID导致排序值异常
+      const uniqueIds = new Set(ids);
+      if (uniqueIds.size !== ids.length) {
+        throw new BadRequestException('排序ID数组不能包含重复项');
+      }
+
+      // 事务保证批量更新的原子性
+      await this.workKindRepository.manager.transaction(async (manager) => {
+        const found = await manager.find(WorkKind, {
+          where: { id: In(ids) },
+        });
+
+        if (found.length !== ids.length) {
+          const foundIds = found.map((x) => x.id);
+          const notFoundIds = ids.filter((id) => !foundIds.includes(id));
+          throw new BadRequestException(
+            `部分工种ID不存在: ${notFoundIds.join(', ')}`,
+          );
+        }
+
+        // 数组下标即排序值
+        await Promise.all(
+          ids.map((id, index) => {
+            return manager.update(WorkKind, id, { sortOrder: index });
+          }),
+        );
+      });
+
+      return null;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('更新工种配置排序失败: ' + error.message);
     }
   }
 }

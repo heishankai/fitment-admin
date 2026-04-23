@@ -211,11 +211,8 @@ export class IsVerifiedService {
         if (createIsVerifiedDto.card_address !== undefined) {
           updateData.card_address = createIsVerifiedDto.card_address;
         }
-        if (createIsVerifiedDto.card_start_date !== undefined) {
-          updateData.card_start_date = createIsVerifiedDto.card_start_date;
-        }
-        if (createIsVerifiedDto.card_end_date !== undefined) {
-          updateData.card_end_date = createIsVerifiedDto.card_end_date;
+        if (createIsVerifiedDto.period_of_validity !== undefined) {
+          updateData.period_of_validity = createIsVerifiedDto.period_of_validity;
         }
         await this.isVerifiedRepository.update(existing.id, updateData);
         return null;
@@ -368,7 +365,7 @@ export class IsVerifiedService {
   }
 
   /**
-   * 认证通过，更新用户的 isVerified 状态为 true
+   * 认证通过：将工匠 isVerified 置为 true，并用实名认证中的证件名称同步昵称
    * @param userId 用户ID
    * @returns null，由全局拦截器包装成标准响应
    */
@@ -384,9 +381,22 @@ export class IsVerifiedService {
         throw new BadRequestException('用户不存在');
       }
 
-      // 更新用户的 isVerified 状态为 true
+      const verification = await this.isVerifiedRepository.findOne({
+        where: { userId },
+      });
+
+      if (!verification) {
+        throw new BadRequestException('未找到该用户的实名认证记录');
+      }
+
+      const cardName = verification.card_name?.trim();
+      if (!cardName) {
+        throw new BadRequestException('证件姓名为空，无法审核通过');
+      }
+
       const updateResult = await this.craftsmanUserRepository.update(userId, {
         isVerified: true,
+        nickname: cardName,
       });
 
       // 验证更新是否成功

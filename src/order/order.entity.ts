@@ -39,10 +39,7 @@ export class Order {
   district: string; // 区县
 
   @Column({ type: 'varchar', length: 50, nullable: true })
-  houseType: string; // 房屋类型：new/old
-
-  @Column({ type: 'varchar', length: 50, nullable: true })
-  houseTypeName: string; // 房屋类型：新房/老房
+  houseType: string; // 房屋类型
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   roomType: string; // 户型：如"2居室"
@@ -81,7 +78,19 @@ export class Order {
   work_kind_name: string; // 工种名称
 
   @Column({ type: 'varchar', length: 50, nullable: true })
-  work_kind_id: string; // 工种ID
+  work_kind_code: string; // 工种编码
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  contactPhone: string; // 联系电话
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  contactName: string; // 联系人姓名
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  serviceTime: string; // 期望上门时间
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  remark: string; // 备注说明
 
   // 订单编号
   @Column({ type: 'varchar', length: 50, unique: true, nullable: true })
@@ -111,12 +120,19 @@ export class Order {
   @Column({ type: 'int', nullable: true })
   gangmaster_cost: number; // 工长工费
 
+  @Column({ type: 'boolean', default: false })
+  gangmaster_cost_is_paid: boolean; // 工长费用是否已支付
+
   // 订单关联关系
   @Column({ nullable: true })
   parent_order_id: number; // 指向工长订单id（仅被分配的工匠订单使用）
 
   @Column({ type: 'boolean', default: false })
   is_assigned: boolean; // 是否是被分配的订单
+
+  /** 已向客服发送「超时未接单」短信，避免重复通知 */
+  @Column({ type: 'boolean', default: false })
+  cs_timeout_sms_sent: boolean;
 
   // 工价项关联（通过 WorkPriceItem 实体表管理，不再使用 JSON 字段）
   @OneToMany(() => WorkPriceItem, (workPriceItem) => workPriceItem.order)

@@ -125,7 +125,7 @@ export class CraftsmanUserController {
   @Get(':id')
   async findOne(
     @Param('id', ParseIntPipe) id: number,
-  ): Promise<CraftsmanUser & { isHomePageVerified: boolean; skillInfo: any }> {
+  ): Promise<CraftsmanUser & { skillInfo: any }> {
     return await this.craftsmanUserService.findOne(id);
   }
 

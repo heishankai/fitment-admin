@@ -36,7 +36,7 @@ export class WorkPriceItem {
       labour_cost_name: string; // 单位名称
       [key: string]: any; // 允许其他字段（如 key, label, title, value, createdAt, updatedAt）
     };
-    work_kind_id: number; // 工种id
+    work_kind_code: string; // 工种编码
     minimum_price: string; // 最低价格
     is_set_minimum_price: string; // 是否设置最低价格
   }>;

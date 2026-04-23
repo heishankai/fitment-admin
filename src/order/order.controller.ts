@@ -30,6 +30,7 @@ import { AcceptWorkPriceDto } from './dto/accept-work-price.dto';
 import { AcceptSingleWorkPriceDto } from './dto/accept-single-work-price.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { ConfirmWorkPriceServiceFeeDto } from './dto/confirm-work-price-service-fee.dto';
+import { UpdateOrderAreaDto } from './dto/update-order-area.dto';
 
 @Controller('order')
 export class OrderController {
@@ -162,6 +163,26 @@ export class OrderController {
   }
 
   /**
+   * PC：标记工长主单工长费为已支付（仅改 gangmaster_cost_is_paid，不调用微信支付）
+   * @param id 工长主订单 ID
+   */
+  @Put(':id/gangmaster-cost/pay')
+  async markGangmasterCostAsPaid(@Param('id', ParseIntPipe) id: number) {
+    try {
+      await this.orderService.markGangmasterCostAsPaid(id);
+      return { success: true, message: '工长费已标记为已支付' };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '标记工长费为已支付失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
    * 根据ID获取订单
    * @param id 订单ID
    * @returns 订单信息
@@ -216,11 +237,12 @@ export class OrderController {
         throw new HttpException('未授权', HttpStatus.UNAUTHORIZED);
       }
 
-      return await this.orderService.getCraftsmanOrders(userId);
+      return await this.orderService.getCraftsmanOrders(Number(userId));
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
       }
+      this.logger.error('获取订单列表失败', error);
       throw new HttpException(
         '获取订单列表失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -326,6 +348,32 @@ export class OrderController {
       }
       throw new HttpException(
         '更新订单状态失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 更新订单平米数
+   * 工长订单会同步重新计算工长费用、平台服务费、上门次数
+   * @param id 订单ID
+   * @param body 面积信息
+   * @returns 更新后的订单
+   */
+  @Put(':id/area')
+  async updateOrderArea(
+    @Param('id', ParseIntPipe) id: number,
+    @Body(ValidationPipe) body: UpdateOrderAreaDto,
+  ) {
+    try {
+      return await this.orderService.updateOrderArea(id, body.area);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('更新订单平米数失败:', error);
+      throw new HttpException(
+        '更新订单平米数失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

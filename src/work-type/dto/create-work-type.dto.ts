@@ -28,11 +28,12 @@ class ServiceDetailDto {
 
 class WorkKindDto {
   @IsString()
-  @IsNotEmpty({ message: '工种标签不能为空' })
-  label: string;
+  @IsNotEmpty({ message: '工种名称不能为空' })
+  work_kind_name: string;
 
-  @IsNotEmpty({ message: '工种值不能为空' })
-  value: string | number;
+  @IsString()
+  @IsNotEmpty({ message: '工种编码不能为空' })
+  work_kind_code: string;
 }
 
 class LabourCostDto {
@@ -49,6 +50,11 @@ export class CreateWorkTypeDto {
   @IsString()
   @IsNotEmpty({ message: '工种名称不能为空' })
   work_title: string;
+
+  // 描述
+  @IsString()
+  @IsOptional()
+  description?: string;
 
   // 工种价格
   @IsNotEmpty({ message: '工种价格不能为空' })

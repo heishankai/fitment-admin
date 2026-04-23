@@ -43,14 +43,9 @@ export class CreateIsVerifiedDto {
   @IsOptional()
   card_address?: string;
 
-  // 证件有效期开始日期
+  // 证件有效期
   @IsString()
   @IsOptional()
-  card_start_date?: string;
-
-  // 证件有效期结束日期
-  @IsString()
-  @IsOptional()
-  card_end_date?: string;
+  period_of_validity?: string;
 }
 

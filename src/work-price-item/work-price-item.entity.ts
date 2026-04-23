@@ -58,8 +58,8 @@ export class WorkPriceItem {
   @Column({ type: 'varchar', length: 50 })
   work_kind_name: string; // 工种名称
 
-  @Column()
-  work_kind_id: number; // 工种id
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  work_kind_code: string; // 工种编码
 
   @Column({ type: 'varchar', length: 50 })
   labour_cost_name: string; // 单位名称

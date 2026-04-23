@@ -136,7 +136,6 @@ export class CraftsmanChatService {
                   avatar: room.craftsman_user.avatar,
                   isVerified: room.craftsman_user.isVerified,
                   isSkillVerified: room.craftsman_user.isSkillVerified,
-                  isHomePageVerified: room.craftsman_user.isHomePageVerified,
                   createdAt: room.craftsman_user.createdAt,
                   updatedAt: room.craftsman_user.updatedAt,
                 }
@@ -242,7 +241,6 @@ export class CraftsmanChatService {
             avatar: room.craftsman_user.avatar,
             isVerified: room.craftsman_user.isVerified,
             isSkillVerified: room.craftsman_user.isSkillVerified,
-            isHomePageVerified: room.craftsman_user.isHomePageVerified,
             createdAt: room.craftsman_user.createdAt,
             updatedAt: room.craftsman_user.updatedAt,
           }

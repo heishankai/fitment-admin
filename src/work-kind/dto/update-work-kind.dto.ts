@@ -5,6 +5,13 @@ import { IsOptional, IsString } from 'class-validator';
  */
 export class UpdateWorkKindDto {
   /**
+   * 工种编码
+   */
+  @IsOptional()
+  @IsString({ message: '工种编码必须是字符串' })
+  work_kind_code?: string;
+
+  /**
    * 工种名称
    */
   @IsOptional()

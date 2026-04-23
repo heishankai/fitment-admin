@@ -20,10 +20,11 @@ class ServiceDetailDto {
 class WorkKindDto {
   @IsString()
   @IsOptional()
-  label?: string;
+  work_kind_name?: string;
 
+  @IsString()
   @IsOptional()
-  value?: string | number;
+  work_kind_code?: string;
 }
 
 class LabourCostDto {
@@ -45,6 +46,13 @@ export class UpdateWorkTypeDto {
   @IsOptional()
   @IsString({ message: '工种名称必须是字符串' })
   work_title?: string;
+
+  /**
+   * 描述
+   */
+  @IsOptional()
+  @IsString({ message: '描述必须是字符串' })
+  description?: string;
 
   /**
    * 工种价格

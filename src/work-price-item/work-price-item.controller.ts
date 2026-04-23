@@ -14,6 +14,7 @@ import {
 import { WorkPriceItemService } from './work-price-item.service';
 import { WorkPriceItem } from './work-price-item.entity';
 import { CreateWorkPriceItemsDto } from './dto/create-work-price-items.dto';
+import { BatchAcceptWorkPriceDto } from './dto/batch-accept-work-price.dto';
 import { MaterialsResponseDto } from '../materials/dto/materials-response.dto';
 import { ConstructionProgressService } from '../construction-progress/construction-progress.service';
 import { ConstructionProgress } from '../construction-progress/construction-progress.entity';
@@ -24,6 +25,43 @@ export class WorkPriceItemController {
     private readonly workPriceItemService: WorkPriceItemService,
     private readonly constructionProgressService: ConstructionProgressService,
   ) {}
+
+  /**
+   * 按订单查主工价 + 子工价（工匠订单：独立工匠单 / 分配工匠单，均含父工价组与子工价组）
+   */
+  @Get('order/:orderId/work-prices')
+  async getWorkPricesByOrderId(
+    @Param('orderId', ParseIntPipe) orderId: number,
+  ): Promise<any> {
+    try {
+      return await this.workPriceItemService.getWorkPricesByOrderId(orderId);
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new HttpException('查询工价失败', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * 批量验收：将 body.work_price_item_ids 中的工价项全部置为已验收（逐条执行与 order/accept-single-work-price 相同的业务逻辑）
+   */
+  @Post('batch-accept')
+  async batchAccept(
+    @Body(ValidationPipe) body: BatchAcceptWorkPriceDto,
+  ): Promise<null> {
+    try {
+      return await this.workPriceItemService.batchAcceptByWorkPriceItemIds(
+        body.work_price_item_ids,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '一键验收工价失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 
   /**
    * 根据订单ID查询工价项列表
@@ -266,6 +304,25 @@ export class WorkPriceItemController {
         '查询子工价组失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    }
+  }
+
+  /**
+   * 按工价项 + 工匠解析分配工匠单，返回该工匠单全部工价（主工价 + 子工价，结构同 order/.../work-prices）
+   */
+  @Get(':workPriceItemId/craftsman/:craftsmanId/work-prices')
+  async getWorkPricesByWorkPriceItemAndCraftsman(
+    @Param('workPriceItemId', ParseIntPipe) workPriceItemId: number,
+    @Param('craftsmanId', ParseIntPipe) craftsmanId: number,
+  ): Promise<any> {
+    try {
+      return await this.workPriceItemService.getWorkPricesByWorkPriceItemAndCraftsman(
+        workPriceItemId,
+        craftsmanId,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new HttpException('查询工价失败', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 

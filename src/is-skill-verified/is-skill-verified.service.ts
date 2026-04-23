@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
 import { IsSkillVerified } from './is-skill-verified.entity';
 import { CraftsmanUser } from '../craftsman-user/craftsman-user.entity';
+import { WorkKind } from '../work-kind/work-kind.entity';
 import { CreateIsSkillVerifiedDto } from './dto/create-is-skill-verified.dto';
 import { UpdateIsSkillVerifiedDto } from './dto/update-is-skill-verified.dto';
 import { QueryIsSkillVerifiedDto } from './dto/query-is-skill-verified.dto';
@@ -15,12 +16,34 @@ export class IsSkillVerifiedService {
     private readonly isSkillVerifiedRepository: Repository<IsSkillVerified>,
     @InjectRepository(CraftsmanUser)
     private readonly craftsmanUserRepository: Repository<CraftsmanUser>,
+    @InjectRepository(WorkKind)
+    private readonly workKindRepository: Repository<WorkKind>,
     private readonly notificationService: SystemNotificationService,
   ) {}
 
+  /** 去掉昵称前已存在的「工种名-」前缀（按工种名长度优先匹配长的），避免重复审核或换工种时叠前缀 */
+  private stripLeadingWorkKindFromNickname(
+    nickname: string,
+    workKindNames: string[],
+  ): string {
+    const n = nickname || '';
+    const unique = [
+      ...new Set(
+        workKindNames.map((s) => s?.trim()).filter((s): s is string => !!s),
+      ),
+    ].sort((a, b) => b.length - a.length);
+    for (const name of unique) {
+      const pref = `${name}-`;
+      if (n.startsWith(pref)) {
+        return n.slice(pref.length);
+      }
+    }
+    return n;
+  }
+
   /**
    * 分页查询技能认证记录
-   * @param queryDto 查询参数 {pageIndex, pageSize, workKindId, nickname, phone}
+   * @param queryDto 查询参数 {pageIndex, pageSize, work_kind_code, nickname, phone}
    * @returns 分页结果
    */
   async getIsSkillVerifiedByPage(
@@ -31,7 +54,7 @@ export class IsSkillVerifiedService {
       const {
         pageIndex = 1,
         pageSize = 10,
-        workKindId,
+        work_kind_code,
         nickname,
         phone,
       } = queryDto;
@@ -77,9 +100,9 @@ export class IsSkillVerifiedService {
         this.isSkillVerifiedRepository.createQueryBuilder('is_skill_verified');
 
       // 添加筛选条件
-      if (workKindId) {
-        query.andWhere('is_skill_verified.workKindId = :workKindId', {
-          workKindId,
+      if (work_kind_code) {
+        query.andWhere('is_skill_verified.work_kind_code = :work_kind_code', {
+          work_kind_code,
         });
       }
 
@@ -205,11 +228,17 @@ export class IsSkillVerifiedService {
         if (createIsSkillVerifiedDto.operation_video !== undefined) {
           updateData.operation_video = createIsSkillVerifiedDto.operation_video;
         }
-        if (createIsSkillVerifiedDto.workKindId !== undefined) {
-          updateData.workKindId = createIsSkillVerifiedDto.workKindId;
+        if (createIsSkillVerifiedDto.work_kind_code !== undefined) {
+          updateData.work_kind_code = createIsSkillVerifiedDto.work_kind_code;
         }
-        if (createIsSkillVerifiedDto.workKindName !== undefined) {
-          updateData.workKindName = createIsSkillVerifiedDto.workKindName;
+        if (createIsSkillVerifiedDto.work_kind_name !== undefined) {
+          updateData.work_kind_name = createIsSkillVerifiedDto.work_kind_name;
+        }
+        if (createIsSkillVerifiedDto.work_years !== undefined) {
+          updateData.work_years = createIsSkillVerifiedDto.work_years;
+        }
+        if (createIsSkillVerifiedDto.skill_intro !== undefined) {
+          updateData.skill_intro = createIsSkillVerifiedDto.skill_intro;
         }
         await this.isSkillVerifiedRepository.update(existing.id, updateData);
         return null;
@@ -361,7 +390,7 @@ export class IsSkillVerifiedService {
   }
 
   /**
-   * 认证通过，更新用户的 isSkillVerified 状态为 true
+   * 认证通过：isSkillVerified 为 true，昵称格式为「工种名称-原昵称」（原昵称为去掉已有工种前缀后的部分）
    * @param userId 用户ID
    * @returns null，由全局拦截器包装成标准响应
    */
@@ -377,9 +406,41 @@ export class IsSkillVerifiedService {
         throw new BadRequestException('用户不存在');
       }
 
-      // 更新用户的 isSkillVerified 状态为 true
+      const verification = await this.isSkillVerifiedRepository.findOne({
+        where: { userId },
+      });
+
+      if (!verification) {
+        throw new BadRequestException('未找到该用户的技能认证记录');
+      }
+
+      const workKindName = verification.work_kind_name?.trim();
+      if (!workKindName) {
+        throw new BadRequestException('工种名称为空，无法审核通过');
+      }
+
+      const kindRows = await this.workKindRepository.find({
+        select: ['work_kind_name'],
+      });
+      const catalogNames = kindRows
+        .map((r) => r.work_kind_name)
+        .filter((s): s is string => !!s?.trim());
+      const namesForStrip = [...new Set([...catalogNames, workKindName])];
+
+      let baseNickname = this.stripLeadingWorkKindFromNickname(
+        user.nickname || '',
+        namesForStrip,
+      ).trim();
+      if (!baseNickname) {
+        baseNickname =
+          (user.nickname || '').trim() || '智惠装师傅';
+      }
+
+      const newNickname = `${workKindName}-${baseNickname}`;
+
       const updateResult = await this.craftsmanUserRepository.update(userId, {
         isSkillVerified: true,
+        nickname: newNickname,
       });
 
       // 验证更新是否成功

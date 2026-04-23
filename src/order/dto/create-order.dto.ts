@@ -25,11 +25,27 @@ export class CreateOrderDto {
 
   @IsOptional()
   @IsString()
-  houseType?: string; // 房屋类型：new/old
+  houseType?: string; // 房屋类型
 
   @IsOptional()
   @IsString()
   roomType?: string; // 户型：如"2居室"
+
+  @IsOptional()
+  @IsString()
+  contactPhone?: string; // 联系电话
+
+  @IsOptional()
+  @IsString()
+  contactName?: string; // 联系人姓名
+
+  @IsOptional()
+  @IsString()
+  serviceTime?: string; // 期望上门时间
+
+  @IsOptional()
+  @IsString()
+  remark?: string; // 备注说明
 
   @IsOptional()
   @IsString()
@@ -57,6 +73,6 @@ export class CreateOrderDto {
 
   @IsOptional()
   @IsString()
-  work_kind_id?: string; // 工种ID
+  work_kind_code?: string; // 工种编码
 }
 

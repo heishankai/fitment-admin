@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Put,
+  Delete,
   Body,
   Param,
   Request,
@@ -16,6 +17,7 @@ import { HomePageAudit } from './home-page-audit.entity';
 import { CreateHomePageAuditDto } from './dto/create-home-page-audit.dto';
 import { UpdateHomePageAuditDto } from './dto/update-home-page-audit.dto';
 import { QueryHomePageAuditDto } from './dto/query-home-page-audit.dto';
+import { QueryMyWorksDto } from './dto/query-my-works.dto';
 
 @Controller('home-page-audit')
 export class HomePageAuditController {
@@ -25,8 +27,6 @@ export class HomePageAuditController {
 
   /**
    * 分页查询首页审核记录
-   * @param queryDto 查询参数 {pageIndex, pageSize}
-   * @returns 分页结果
    */
   @Post('page')
   async getHomePageAuditByPage(
@@ -37,9 +37,6 @@ export class HomePageAuditController {
 
   /**
    * 新增首页审核记录
-   * @param request 请求对象（包含从token解析的用户信息）
-   * @param createHomePageAuditDto 首页审核信息
-   * @returns null，由全局拦截器包装成标准响应
    */
   @Post()
   async createHomePageAudit(
@@ -47,7 +44,6 @@ export class HomePageAuditController {
     @Body(ValidationPipe) createHomePageAuditDto: CreateHomePageAuditDto,
   ): Promise<null> {
     try {
-      // 从token中获取userId
       const userId = request.user?.userid || request.user?.userId;
       if (!userId) {
         throw new HttpException('未授权', HttpStatus.UNAUTHORIZED);
@@ -68,16 +64,30 @@ export class HomePageAuditController {
   }
 
   /**
-   * 根据token获取当前用户的首页审核记录
+   * 分页查询当前用户的所有作品
    * @param request 请求对象（包含从token解析的用户信息）
-   * @returns 首页审核记录（包含用户的 isHomePageVerified 状态）
+   * @param queryDto 分页参数 {pageIndex, pageSize, status}
+   */
+  @Post('my/page')
+  async getMyWorksByPage(
+    @Request() request: any,
+    @Body(ValidationPipe) queryDto: QueryMyWorksDto,
+  ): Promise<any> {
+    const userId = request.user?.userid || request.user?.userId;
+    if (!userId) {
+      throw new HttpException('未授权', HttpStatus.UNAUTHORIZED);
+    }
+    return await this.homePageAuditService.getMyWorksByPage(userId, queryDto);
+  }
+
+  /**
+   * 根据token获取当前用户的所有首页审核记录
    */
   @Get('my')
   async getMyHomePageAudit(
     @Request() request: any,
-  ): Promise<(HomePageAudit & { isHomePageVerified: boolean }) | null> {
+  ): Promise<HomePageAudit[]> {
     try {
-      // 从token中获取userId
       const userId = request.user?.userid || request.user?.userId;
       if (!userId) {
         throw new HttpException('未授权', HttpStatus.UNAUTHORIZED);
@@ -95,9 +105,27 @@ export class HomePageAuditController {
   }
 
   /**
+   * 根据工匠用户ID获取全部审核通过（已发布）的作品
+   */
+  @Get('user/:userId/published')
+  async findPublishedWorksByUserId(
+    @Param('userId', ParseIntPipe) userId: number,
+  ): Promise<HomePageAudit[]> {
+    return await this.homePageAuditService.findPublishedWorksByUserId(userId);
+  }
+
+  /**
+   * 根据用户ID获取该工匠的所有首页审核记录（需在 :id 之前定义，避免路由冲突）
+   */
+  @Get('user/:userId')
+  async findByUserId(
+    @Param('userId', ParseIntPipe) userId: number,
+  ): Promise<HomePageAudit[]> {
+    return await this.homePageAuditService.findByUserId(userId);
+  }
+
+  /**
    * 根据ID获取首页审核记录
-   * @param id 首页审核ID
-   * @returns 首页审核记录
    */
   @Get(':id')
   async findOne(
@@ -107,51 +135,64 @@ export class HomePageAuditController {
   }
 
   /**
-   * 根据用户ID获取首页审核记录
-   * @param userId 用户ID
-   * @returns 首页审核记录
+   * 审核通过（按用户ID，审核该用户最新的一条记录）- 需在 approve/:id 之前定义
+   * @param userId 工匠用户ID
    */
-  @Get('user/:userId')
-  async findByUserId(
-    @Param('userId', ParseIntPipe) userId: number,
-  ): Promise<HomePageAudit | null> {
-    return await this.homePageAuditService.findByUserId(userId);
-  }
-
-  /**
-   * 审核通过，更新用户的 isHomePageVerified 状态为 true
-   * @param userId 用户ID
-   * @returns null，由全局拦截器包装成标准响应
-   */
-  @Put('approve/:userId')
-  async approveVerification(
+  @Put('approve/user/:userId')
+  async approveVerificationByUserId(
     @Param('userId', ParseIntPipe) userId: number,
   ): Promise<null> {
-    return await this.homePageAuditService.approveVerification(userId);
+    return await this.homePageAuditService.approveVerificationByUserId(userId);
   }
 
   /**
-   * 审核不通过，更新用户的 isHomePageVerified 状态为 false
-   * @param userId 用户ID
-   * @param body 拒绝原因（可选）
-   * @returns null，由全局拦截器包装成标准响应
+   * 审核通过（按记录ID）
+   * @param id 首页审核记录ID
    */
-  @Put('reject/:userId')
-  async rejectVerification(
+  @Put('approve/:id')
+  async approveVerification(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<null> {
+    return await this.homePageAuditService.approveVerificationById(id);
+  }
+
+  /**
+   * 审核不通过（按用户ID，拒绝该用户最新的一条记录）- 需在 reject/:id 之前定义
+   * @param userId 工匠用户ID
+   */
+  @Put('reject/user/:userId')
+  async rejectVerificationByUserId(
     @Param('userId', ParseIntPipe) userId: number,
     @Body() body?: { reason?: string },
   ): Promise<null> {
-    return await this.homePageAuditService.rejectVerification(
-      userId,
-      body?.reason,
-    );
+    return await this.homePageAuditService.rejectVerificationByUserId(userId, body?.reason);
+  }
+
+  /**
+   * 审核不通过（按记录ID）
+   * @param id 首页审核记录ID
+   * @param body 拒绝原因（可选）
+   */
+  @Put('reject/:id')
+  async rejectVerification(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body?: { reason?: string },
+  ): Promise<null> {
+    return await this.homePageAuditService.rejectVerification(id, body?.reason);
+  }
+
+  /**
+   * 根据ID删除首页审核记录
+   */
+  @Delete(':id')
+  async deleteHomePageAudit(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<null> {
+    return await this.homePageAuditService.deleteHomePageAudit(id);
   }
 
   /**
    * 根据用户ID更新首页审核记录
-   * @param userId 用户ID
-   * @param updateDto 更新数据
-   * @returns null，由全局拦截器包装成标准响应
    */
   @Put('user/:userId')
   async updateByUserId(
@@ -163,9 +204,6 @@ export class HomePageAuditController {
 
   /**
    * 根据ID更新首页审核记录
-   * @param id 首页审核ID
-   * @param updateDto 更新数据
-   * @returns null，由全局拦截器包装成标准响应
    */
   @Put(':id')
   async updateHomePageAudit(
@@ -175,4 +213,3 @@ export class HomePageAuditController {
     return await this.homePageAuditService.updateHomePageAudit(id, updateDto);
   }
 }
-

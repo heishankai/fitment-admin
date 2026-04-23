@@ -25,7 +25,7 @@ export class IsSkillVerifiedController {
 
   /**
    * 分页查询技能认证记录
-   * @param queryDto 查询参数 {pageIndex, pageSize, workKindId}
+   * @param queryDto 查询参数 {pageIndex, pageSize, work_kind_code}
    * @returns 分页结果
    */
   @Post('page')
@@ -119,7 +119,7 @@ export class IsSkillVerifiedController {
   }
 
   /**
-   * 认证通过，更新用户的 isSkillVerified 状态为 true
+   * 认证通过：isSkillVerified 为 true，并将昵称更新为「工种名称-昵称」
    * @param userId 用户ID
    * @returns null，由全局拦截器包装成标准响应
    */

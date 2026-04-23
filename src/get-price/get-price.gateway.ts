@@ -90,7 +90,6 @@ export class GetPriceGateway
       id: getPrice.id,
       area: getPrice.area,
       houseType: getPrice.houseType,
-      houseTypeName: getPrice.houseTypeName,
       location: getPrice.location,
       roomType: getPrice.roomType,
       phone: getPrice.phone,

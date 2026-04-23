@@ -106,7 +106,6 @@ export class CraftsmanUserService {
     avatar: string;
     isVerified: boolean;
     isSkillVerified: boolean;
-    isHomePageVerified: boolean;
     skillInfo: IsSkillVerified | null;
     latitude: number | null;
     longitude: number | null;
@@ -147,7 +146,6 @@ export class CraftsmanUserService {
         isVerified: user.isVerified || false,
         // isSkillVerified 动态返回：只有当用户真正通过认证时才为 true
         isSkillVerified: user.isSkillVerified === true,
-        isHomePageVerified: user.isHomePageVerified || false,
         skillInfo: skillInfo || null,
         latitude: user.latitude || null,
         longitude: user.longitude || null,
@@ -233,7 +231,7 @@ export class CraftsmanUserService {
    * 获取所有工匠用户
    * @returns 所有工匠用户列表（包含技能信息）
    */
-  async getAllCraftsmanUsers(): Promise<Array<CraftsmanUser & { isHomePageVerified: boolean; skillInfo: IsSkillVerified | null }>> {
+  async getAllCraftsmanUsers(): Promise<Array<CraftsmanUser & { skillInfo: IsSkillVerified | null }>> {
     try {
       // 查询所有工匠用户
       const users = await this.craftsmanUserRepository.find({
@@ -253,12 +251,10 @@ export class CraftsmanUserService {
         skillInfos.map((skill) => [skill.userId, skill]),
       );
 
-      // 为每个用户添加 isHomePageVerified 和技能信息
-      // isSkillVerified 动态返回：只有当用户真正通过认证时才为 true
+      // 为每个用户添加技能信息
       const dataWithSkillInfo = users.map((user) => ({
         ...user,
         isSkillVerified: user.isSkillVerified === true,
-        isHomePageVerified: user.isHomePageVerified || false,
         skillInfo: skillInfoMap.get(user.id) || null,
       }));
 
@@ -330,12 +326,10 @@ export class CraftsmanUserService {
         skillInfos.map((skill) => [skill.userId, skill]),
       );
 
-      // 为每个用户添加 isHomePageVerified 和技能信息
-      // isSkillVerified 动态返回：只有当用户真正通过认证时才为 true
+      // 为每个用户添加技能信息
       const dataWithSkillInfo = data.map((user) => ({
         ...user,
         isSkillVerified: user.isSkillVerified === true,
-        isHomePageVerified: user.isHomePageVerified || false,
         skillInfo: skillInfoMap.get(user.id) || null,
       }));
 
@@ -368,9 +362,9 @@ export class CraftsmanUserService {
   /**
    * 根据ID获取工匠用户
    * @param id 工匠用户ID
-   * @returns 工匠用户信息（包含 isHomePageVerified 和技能信息）
+   * @returns 工匠用户信息（包含技能信息）
    */
-  async findOne(id: number): Promise<CraftsmanUser & { isHomePageVerified: boolean; skillInfo: IsSkillVerified | null }> {
+  async findOne(id: number): Promise<CraftsmanUser & { skillInfo: IsSkillVerified | null }> {
     const user = await this.craftsmanUserRepository.findOne({
       where: { id },
     });
@@ -386,9 +380,7 @@ export class CraftsmanUserService {
 
     return {
       ...user,
-      // isSkillVerified 动态返回：只有当用户真正通过认证时才为 true
       isSkillVerified: user.isSkillVerified === true,
-      isHomePageVerified: user.isHomePageVerified || false,
       skillInfo: skillInfo || null,
     };
   }

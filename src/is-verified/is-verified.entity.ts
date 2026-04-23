@@ -35,13 +35,9 @@ export class IsVerified {
   @Column({ nullable: true })
   card_address: string;
 
-  // 证件有效期开始日期
-  @Column({ nullable: true })
-  card_start_date: string;
-
-  // 证件有效期结束日期
-  @Column({ nullable: true })
-  card_end_date: string;
+  // 证件有效期
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  period_of_validity: string;
 
   // 创建时间
   @CreateDateColumn()

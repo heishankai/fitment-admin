@@ -1,34 +1,14 @@
-import {
-  IsString,
-  IsArray,
-  IsOptional,
-  IsNotEmpty,
-  ValidateNested,
-} from 'class-validator';
-import { Type } from 'class-transformer';
-
-class ImageUrlDto {
-  @IsString()
-  @IsNotEmpty({ message: '图片URL不能为空' })
-  url: string;
-}
+import { IsString, IsArray, IsOptional, ArrayMinSize } from 'class-validator';
 
 export class CreateHomePageAuditDto {
-  // 简介
+  // 工地心得（创建时非必填）
   @IsString()
   @IsOptional()
-  intro?: string;
+  publish_text?: string;
 
-  // 获奖情况
-  @IsString()
-  @IsOptional()
-  awards?: string;
-
-  // 获奖图片
-  @IsArray()
-  @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => ImageUrlDto)
-  awards_image?: Array<{ url: string }>;
+  // 工地图片（创建时必填）
+  @IsArray({ message: '工地图片必须是数组' })
+  @ArrayMinSize(1, { message: '工地图片至少需要一张' })
+  @IsString({ each: true, message: '每张图片必须是字符串URL' })
+  publish_images: string[];
 }
-

@@ -15,6 +15,7 @@ import { WechatUser } from './wechat-user.entity';
 import { UpdateWechatUserDto } from './dto/update-wechat-user.dto';
 import { QueryWechatUserDto } from './dto/query-wechat-user.dto';
 import { Like } from 'typeorm';
+import { SmsNotifyConfigService } from '../sms-notify-config/sms-notify-config.service';
 
 @Injectable()
 export class WechatUserService {
@@ -22,6 +23,7 @@ export class WechatUserService {
     @InjectRepository(WechatUser)
     private readonly wechatUserRepository: Repository<WechatUser>,
     private readonly jwtService: JwtService,
+    private readonly smsNotifyConfigService: SmsNotifyConfigService,
   ) {}
 
   /**
@@ -123,6 +125,9 @@ export class WechatUserService {
             'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',
         });
         user = await this.wechatUserRepository.save(user);
+        this.smsNotifyConfigService.notifyWechatUserRegistered(
+          user.nickname || '智惠装用户',
+        );
       } else {
         // 如果用户存在，更新手机号码
         await this.wechatUserRepository.update(

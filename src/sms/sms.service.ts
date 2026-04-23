@@ -276,4 +276,58 @@ export class SmsService {
       };
     }
   }
+
+  /**
+   * 使用指定模板发送短信（客服通知等场景）
+   * @param templateParam 模板变量，键名须与阿里云模板一致；无变量时传 {}
+   */
+  async sendTemplateSms(
+    phoneNumber: string,
+    templateCode: string,
+    templateParam: Record<string, string> = {},
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      if (!this.isValidPhoneNumber(phoneNumber)) {
+        console.warn(`模板短信发送失败: 手机号格式不正确 ${phoneNumber}`);
+        return { success: false, message: '手机号格式不正确' };
+      }
+
+      const sendSmsRequest = new $Dysmsapi20170525.SendSmsRequest({
+        phoneNumbers: phoneNumber,
+        signName: SMS_CONFIG.signName,
+        templateCode,
+        templateParam: JSON.stringify(templateParam),
+      });
+
+      const response = await this.client.sendSms(sendSmsRequest);
+
+      if (!response.body) {
+        console.error(
+          `模板短信发送失败: 响应为空, 手机 ${phoneNumber}, 模板 ${templateCode}`,
+        );
+        return { success: false, message: '发送失败: 响应数据为空' };
+      }
+
+      if (response.body.code === 'OK') {
+        console.log(
+          `模板短信发送成功: ${phoneNumber}, 模板 ${templateCode}`,
+        );
+        return { success: true, message: '发送成功' };
+      }
+
+      console.error(
+        `模板短信发送失败: ${response.body.message}, 手机 ${phoneNumber}, 模板 ${templateCode}`,
+      );
+      return {
+        success: false,
+        message: `发送失败: ${response.body.message || '未知错误'}`,
+      };
+    } catch (error) {
+      console.error(`模板短信发送异常: ${phoneNumber}`, error);
+      return {
+        success: false,
+        message: '发送失败，请稍后重试',
+      };
+    }
+  }
 }
