@@ -1,13 +1,12 @@
 import {
   Controller,
   Post,
-  UseInterceptors,
-  UploadedFile,
   Body,
   HttpException,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FastifyRequest } from 'fastify';
 import { OssService } from '../services/oss.service';
 import { UPLOAD_CONFIG } from '../constants/app.constants';
 import { Public } from '../../auth/public.decorator';
@@ -24,21 +23,50 @@ export class UploadController {
    */
   @Public()
   @Post()
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadFile(
-    @UploadedFile() file: Express.Multer.File,
-    @Body() body: { folder?: string },
-  ) {
+  async uploadFile(@Req() req: FastifyRequest) {
     try {
-      if (!file) {
+      if (!req.isMultipart()) {
+        throw new HttpException(
+          '请使用 multipart/form-data 上传，字段名 file',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      let folder: string | undefined;
+      let buffer: Buffer | undefined;
+      let mimetype = 'application/octet-stream';
+      let originalname = 'file';
+
+      for await (const part of req.parts()) {
+        if (part.type === 'file' && part.fieldname === 'file') {
+          buffer = await part.toBuffer();
+          mimetype = part.mimetype || mimetype;
+          originalname = part.filename || originalname;
+        } else if (part.type === 'field' && part.fieldname === 'folder') {
+          folder = String(part.value);
+        }
+      }
+
+      if (!buffer) {
         throw new HttpException('没有接收到文件', HttpStatus.BAD_REQUEST);
       }
 
-      // 默认上传到uploads文件夹，可以通过body.folder指定
-      const folder = body.folder || UPLOAD_CONFIG.defaultFolder;
+      // 与 OssService 约定的内存文件结构（与 Multer 在内存中存储时一致）
+      const file: Express.Multer.File = {
+        fieldname: 'file',
+        originalname,
+        encoding: '7bit',
+        mimetype,
+        size: buffer.length,
+        buffer,
+        stream: null as any,
+        destination: '',
+        filename: '',
+        path: '',
+      };
 
-      // 上传到OSS
-      const result = await this.ossService.uploadFile(file, folder);
+      const targetFolder = folder || UPLOAD_CONFIG.defaultFolder;
+      const result = await this.ossService.uploadFile(file, targetFolder);
 
       return {
         url: result.url,

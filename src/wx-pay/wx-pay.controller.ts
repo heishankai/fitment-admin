@@ -9,7 +9,7 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { WxPayService } from './wx-pay.service';
 import { Public } from '../auth/public.decorator';
 import { AuthGuard } from '../auth/auth.guard';
@@ -29,7 +29,7 @@ export class WxPayController {
   @UseGuards(AuthGuard)
   async orderWxPay(
     @Body(ValidationPipe) orderWxPayDto: OrderWxPayDto,
-    @Req() req: Request,
+    @Req() req: FastifyRequest,
   ): Promise<any> {
     const openid = (req as any).user?.openid;
     if (!openid) {
@@ -48,7 +48,7 @@ export class WxPayController {
   @UseGuards(AuthGuard)
   async materialsPrepay(
     @Body(ValidationPipe) body: WxPayMaterialsDto,
-    @Req() req: Request,
+    @Req() req: FastifyRequest,
   ): Promise<any> {
     const openid = (req as any).user?.openid;
     if (!openid) {
@@ -68,7 +68,7 @@ export class WxPayController {
   @UseGuards(AuthGuard)
   async workPriceItemsPrepay(
     @Body(ValidationPipe) body: WxPayWorkPriceItemsDto,
-    @Req() req: Request,
+    @Req() req: FastifyRequest,
   ): Promise<any> {
     const openid = (req as any).user?.openid;
     if (!openid) {
@@ -87,7 +87,7 @@ export class WxPayController {
   @UseGuards(AuthGuard)
   async orderFeesPrepay(
     @Body(ValidationPipe) body: WxPayOrderFeesDto,
-    @Req() req: Request,
+    @Req() req: FastifyRequest,
   ): Promise<any> {
     const openid = (req as any).user?.openid;
     if (!openid) {
@@ -105,9 +105,9 @@ export class WxPayController {
    */
   @Post('wx-pay-callback')
   @Public()
-  async wxPayCallback(@Body() body: any, @Res() res: Response): Promise<void> {
+  async wxPayCallback(@Body() body: any, @Res() res: FastifyReply): Promise<void> {
     const result = await this.wxPayService.wxPayCallback(body);
-    res.status(200).json(result);
+    res.code(200).send(result);
   }
 }
 

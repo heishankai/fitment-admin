@@ -54,6 +54,7 @@ import {
 } from './index';
 // 导入数据库配置
 import { DATABASE_CONFIG } from './common/constants/app.constants';
+import { RedisModule } from './common/redis';
 import { WstModule } from './wst/wst.module';
 
 /**
@@ -62,6 +63,7 @@ import { WstModule } from './wst/wst.module';
  */
 @Module({
   imports: [
+    RedisModule,
     TypeOrmModule.forRoot({
       type: DATABASE_CONFIG.type,
       host: DATABASE_CONFIG.host,

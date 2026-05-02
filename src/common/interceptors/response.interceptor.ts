@@ -21,16 +21,26 @@ export class ResponseInterceptor<T>
     next: CallHandler,
   ): Observable<ApiResponseDto<T>> {
     const response = context.switchToHttp().getResponse();
-    
+    const reply = response as {
+      sent?: boolean;
+      headersSent?: boolean;
+      raw?: { headersSent?: boolean };
+      getHeader(name: string): string | number | string[] | undefined;
+    };
+
     return next.handle().pipe(
       map((data) => {
         // 如果响应已经发送（例如文件下载），直接返回数据，不进行包装
-        if (response.headersSent) {
+        if (
+          reply.sent ||
+          reply.headersSent ||
+          reply.raw?.headersSent
+        ) {
           return data;
         }
 
         // 如果响应类型是 blob（文件下载），直接返回数据
-        const contentType = response.getHeader('Content-Type');
+        const contentType = reply.getHeader('Content-Type');
         if (
           contentType &&
           (contentType.toString().includes('application/vnd.openxmlformats') ||

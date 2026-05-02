@@ -11,7 +11,7 @@ import {
   ParseIntPipe,
   Res,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { FastifyReply } from 'fastify';
 import { PlatformIncomeRecordService } from './platform-income-record.service';
 import { CreatePlatformIncomeRecordDto } from './dto/create-platform-income-record.dto';
 import { QueryPlatformIncomeRecordDto } from './dto/query-platform-income-record.dto';
@@ -143,7 +143,7 @@ export class PlatformIncomeRecordController {
   @Post('export')
   async exportIncomeRecords(
     @Body(ValidationPipe) body: Partial<QueryPlatformIncomeRecordDto>,
-    @Res() res: Response,
+    @Res() res: FastifyReply,
   ): Promise<void> {
     try {
       const buffer = await this.platformIncomeRecordService.exportIncomeRecordsToExcel(body);
@@ -156,16 +156,15 @@ export class PlatformIncomeRecordController {
       const filename = `平台收支记录_${timestamp}.xlsx`;
 
       // 设置响应头
-      res.setHeader(
-        'Content-Type',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      );
-      // 使用 RFC 5987 标准格式支持中文文件名
-      // filename 用于兼容旧浏览器，filename* 用于支持 UTF-8 编码
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
-      );
+      res
+        .header(
+          'Content-Type',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        .header(
+          'Content-Disposition',
+          `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        );
 
       // 发送文件（不返回任何值，避免响应拦截器干扰）
       res.send(Buffer.from(buffer));

@@ -5,18 +5,25 @@ import { WorkKind } from './work-kind.entity';
 import { CreateWorkKindDto } from './dto/create-work-kind.dto';
 import { QueryWorkKindDto } from './dto/query-work-kind.dto';
 import { UpdateWorkKindDto } from './dto/update-work-kind.dto';
+import { Cache, RedisService } from '../common/redis';
+
+const WORK_KIND_PAGE_CACHE_PATTERN =
+  'cache:WorkKindService:getWorkKindsByPageInternal:*';
+const WORK_KIND_ALL_CACHE_PATTERN = 'cache:WorkKindService:getAllWorkKinds:*';
 
 @Injectable()
 export class WorkKindService {
   constructor(
     @InjectRepository(WorkKind)
     private readonly workKindRepository: Repository<WorkKind>,
+    private readonly redisService: RedisService,
   ) {}
 
   /**
    * 获取所有工种配置
    * @returns 所有工种配置列表
    */
+  @Cache(120)
   async getAllWorkKinds(): Promise<WorkKind[]> {
     try {
       const workKinds = await this.workKindRepository.find({
@@ -38,60 +45,61 @@ export class WorkKindService {
    */
   async getWorkKindsByPage(queryDto: QueryWorkKindDto): Promise<any> {
     try {
-      // 获取参数
-      const {
-        pageIndex = 1,
-        pageSize = 10,
-        work_kind_name = '',
-      } = queryDto;
-
-      // 创建查询构建器
-      const query = this.workKindRepository.createQueryBuilder('work_kind');
-
-      // 添加筛选条件
-      if (work_kind_name) {
-        query.andWhere('work_kind.work_kind_name LIKE :work_kind_name', {
-          work_kind_name: `%${work_kind_name}%`,
-        });
-      }
-
-      // 按排序字段优先，再按创建时间倒序兜底
-      query.orderBy('work_kind.sortOrder', 'ASC');
-      query.addOrderBy('work_kind.createdAt', 'DESC');
-
-      // 查询总数
-      const total = await query.getCount();
-
-      // 查询数据（分页）
-      const data = await query
-        .skip((pageIndex - 1) * pageSize)
-        .take(pageSize)
-        .getMany();
-
-      // 返回结果（包含分页信息的完整格式）
-      return {
-        success: true,
-        data,
-        code: 200,
-        message: null,
-        pageIndex,
-        pageSize,
-        total,
-        pageTotal: Math.ceil(total / pageSize),
-      };
+      return await this.getWorkKindsByPageInternal(queryDto);
     } catch (error) {
       console.error('分页查询错误:', error);
       return {
         success: false,
         data: null,
         code: 500,
-        message: '分页查询失败: ' + error.message,
+        message: '分页查询失败: ' + (error as Error).message,
         pageIndex: 1,
         pageSize: 10,
         total: 0,
         pageTotal: 0,
       };
     }
+  }
+
+  @Cache(120)
+  private async getWorkKindsByPageInternal(
+    queryDto: QueryWorkKindDto,
+  ): Promise<any> {
+    const { pageIndex = 1, pageSize = 10, work_kind_name = '' } = queryDto;
+    const query = this.workKindRepository.createQueryBuilder('work_kind');
+
+    if (work_kind_name) {
+      query.andWhere('work_kind.work_kind_name LIKE :work_kind_name', {
+        work_kind_name: `%${work_kind_name}%`,
+      });
+    }
+
+    query.orderBy('work_kind.sortOrder', 'ASC');
+    query.addOrderBy('work_kind.createdAt', 'DESC');
+
+    const total = await query.getCount();
+    const data = await query
+      .skip((pageIndex - 1) * pageSize)
+      .take(pageSize)
+      .getMany();
+
+    return {
+      success: true,
+      data,
+      code: 200,
+      message: null,
+      pageIndex,
+      pageSize,
+      total,
+      pageTotal: Math.ceil(total / pageSize),
+    };
+  }
+
+  private async invalidateWorkKindListCache() {
+    await Promise.all([
+      this.redisService.deleteByPattern(WORK_KIND_PAGE_CACHE_PATTERN),
+      this.redisService.deleteByPattern(WORK_KIND_ALL_CACHE_PATTERN),
+    ]);
   }
 
   /**
@@ -107,6 +115,7 @@ export class WorkKindService {
       // 保存到数据库
       await this.workKindRepository.save(workKind);
 
+      await this.invalidateWorkKindListCache();
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
       return null;
     } catch (error) {
@@ -151,6 +160,7 @@ export class WorkKindService {
       // 更新记录
       await this.workKindRepository.update(id, updateDto);
 
+      await this.invalidateWorkKindListCache();
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
       return null;
     } catch (error) {
@@ -180,6 +190,7 @@ export class WorkKindService {
       // 删除记录
       await this.workKindRepository.remove(workKind);
 
+      await this.invalidateWorkKindListCache();
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
       return null;
     } catch (error) {
@@ -229,6 +240,7 @@ export class WorkKindService {
         );
       });
 
+      await this.invalidateWorkKindListCache();
       return null;
     } catch (error) {
       if (error instanceof BadRequestException) {

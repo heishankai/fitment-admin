@@ -9,7 +9,7 @@ import {
   Request,
   Res,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { FastifyReply } from 'fastify';
 import { WithdrawService } from './withdraw.service';
 import { QueryWithdrawDto } from './dto/query-withdraw.dto';
 import { AuditWithdrawDto } from './dto/audit-withdraw.dto';
@@ -118,7 +118,7 @@ export class WithdrawController {
   @Post('export')
   async exportWithdraws(
     @Body(ValidationPipe) body: Partial<QueryWithdrawDto>,
-    @Res() res: Response,
+    @Res() res: FastifyReply,
   ): Promise<void> {
     try {
       const buffer = await this.withdrawService.exportWithdrawsToExcel(body);
@@ -131,16 +131,16 @@ export class WithdrawController {
       const filename = `提现申请列表_${timestamp}.xlsx`;
 
       // 设置响应头
-      res.setHeader(
-        'Content-Type',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      );
-      // 使用 RFC 5987 标准格式支持中文文件名
-      // filename 用于兼容旧浏览器，filename* 用于支持 UTF-8 编码
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
-      );
+      res
+        .header(
+          'Content-Type',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        // 使用 RFC 5987 标准格式支持中文文件名
+        .header(
+          'Content-Disposition',
+          `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        );
 
       // 发送文件（不返回任何值，避免响应拦截器干扰）
       res.send(Buffer.from(buffer));

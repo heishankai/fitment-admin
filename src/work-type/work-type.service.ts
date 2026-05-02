@@ -5,12 +5,18 @@ import { WorkType } from './work-type.entity';
 import { CreateWorkTypeDto } from './dto/create-work-type.dto';
 import { QueryWorkTypeDto } from './dto/query-work-type.dto';
 import { UpdateWorkTypeDto } from './dto/update-work-type.dto';
+import { Cache, RedisService } from '../common/redis';
+
+/** 与 @Cache 在 {@link WorkTypeService.getWorkTypesByPageInternal} 上生成的 key 一致 */
+const WORK_TYPE_PAGE_CACHE_PATTERN =
+  'cache:WorkTypeService:getWorkTypesByPageInternal:*';
 
 @Injectable()
 export class WorkTypeService {
   constructor(
     @InjectRepository(WorkType)
     private readonly workTypeRepository: Repository<WorkType>,
+    private readonly redisService: RedisService,
   ) {}
 
   /**
@@ -20,70 +26,75 @@ export class WorkTypeService {
    */
   async getWorkTypesByPage(queryDto: QueryWorkTypeDto): Promise<any> {
     try {
-      // 获取参数
-      const {
-        pageIndex = 1,
-        pageSize = 10,
-        work_title = '',
-        work_kind_code,
-      } = queryDto;
-
-      // 创建查询构建器
-      const query = this.workTypeRepository.createQueryBuilder('work_type');
-
-      // 添加筛选条件：工种名称（模糊匹配）
-      if (work_title) {
-        query.andWhere('work_type.work_title LIKE :work_title', {
-          work_title: `%${work_title}%`,
-        });
-      }
-
-      // 添加筛选条件：工种编码（work_kind.work_kind_code 精确匹配）
-      if (work_kind_code !== undefined && work_kind_code !== null && work_kind_code !== '') {
-        query.andWhere(
-          'JSON_UNQUOTE(JSON_EXTRACT(work_type.work_kind, "$.work_kind_code")) = :workKindCode',
-          {
-            workKindCode: work_kind_code,
-          },
-        );
-      }
-
-      // 按创建时间倒序排列
-      query.orderBy('work_type.createdAt', 'DESC');
-
-      // 查询总数
-      const total = await query.getCount();
-
-      // 查询数据（分页）
-      const data = await query
-        .skip((pageIndex - 1) * pageSize)
-        .take(pageSize)
-        .getMany();
-
-      // 返回结果（包含分页信息的完整格式）
-      return {
-        success: true,
-        data,
-        code: 200,
-        message: null,
-        pageIndex,
-        pageSize,
-        total,
-        pageTotal: Math.ceil(total / pageSize),
-      };
+      return await this.getWorkTypesByPageInternal(queryDto);
     } catch (error) {
       console.error('分页查询错误:', error);
       return {
         success: false,
         data: null,
         code: 500,
-        message: '分页查询失败: ' + error.message,
+        message: '分页查询失败: ' + (error as Error).message,
         pageIndex: 1,
         pageSize: 10,
         total: 0,
         pageTotal: 0,
       };
     }
+  }
+
+  /**
+   * 仅成功结果进入 Redis 缓存，失败抛错由外层转统一错误体。
+   */
+  @Cache(120)
+  private async getWorkTypesByPageInternal(
+    queryDto: QueryWorkTypeDto,
+  ): Promise<any> {
+    const {
+      pageIndex = 1,
+      pageSize = 10,
+      work_title = '',
+      work_kind_code,
+    } = queryDto;
+
+    const query = this.workTypeRepository.createQueryBuilder('work_type');
+
+    if (work_title) {
+      query.andWhere('work_type.work_title LIKE :work_title', {
+        work_title: `%${work_title}%`,
+      });
+    }
+
+    if (
+      work_kind_code !== undefined &&
+      work_kind_code !== null &&
+      work_kind_code !== ''
+    ) {
+      query.andWhere(
+        'JSON_UNQUOTE(JSON_EXTRACT(work_type.work_kind, "$.work_kind_code")) = :workKindCode',
+        {
+          workKindCode: work_kind_code,
+        },
+      );
+    }
+
+    query.orderBy('work_type.createdAt', 'DESC');
+
+    const total = await query.getCount();
+    const data = await query
+      .skip((pageIndex - 1) * pageSize)
+      .take(pageSize)
+      .getMany();
+
+    return {
+      success: true,
+      data,
+      code: 200,
+      message: null,
+      pageIndex,
+      pageSize,
+      total,
+      pageTotal: Math.ceil(total / pageSize),
+    };
   }
 
   /**
@@ -99,6 +110,7 @@ export class WorkTypeService {
       // 保存到数据库
       await this.workTypeRepository.save(workType);
 
+      await this.redisService.deleteByPattern(WORK_TYPE_PAGE_CACHE_PATTERN);
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
       return null;
     } catch (error) {
@@ -146,6 +158,7 @@ export class WorkTypeService {
       // 更新记录
       await this.workTypeRepository.update(id, updateDto);
 
+      await this.redisService.deleteByPattern(WORK_TYPE_PAGE_CACHE_PATTERN);
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
       return null;
     } catch (error) {
@@ -175,6 +188,7 @@ export class WorkTypeService {
       // 删除记录
       await this.workTypeRepository.remove(workType);
 
+      await this.redisService.deleteByPattern(WORK_TYPE_PAGE_CACHE_PATTERN);
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
       return null;
     } catch (error) {
@@ -190,9 +204,7 @@ export class WorkTypeService {
    * @param workKindCode 工种编码
    * @returns 工价数据列表
    */
-  async getWorkTypesByWorkKindId(
-    workKindCode: string,
-  ): Promise<WorkType[]> {
+  async getWorkTypesByWorkKindId(workKindCode: string): Promise<WorkType[]> {
     try {
       const workTypes = await this.workTypeRepository
         .createQueryBuilder('work_type')

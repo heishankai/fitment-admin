@@ -1,5 +1,6 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import { join } from 'path';
 
 // 参考 fitment-h5：按环境加载对应 .env 文件
 dotenv.config();
@@ -9,31 +10,38 @@ dotenv.config({
   override: true,
 });
 
-import { NestApplication, NestFactory } from '@nestjs/core';
+import { NestFactory } from '@nestjs/core';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { HttpExceptionFilter } from './common/exception/http-exception.filter';
-import { NestApplicationContextOptions } from '@nestjs/common/interfaces/nest-application-context-options.interface';
-import { NestExpressApplication } from '@nestjs/platform-express';
+import { UPLOAD_CONFIG } from './common/constants/app.constants';
+import compress from '@fastify/compress';
+import multipart from '@fastify/multipart';
 
 /**
- * 应用程序的入口文件，它使用核心函数 NestFactory 来创建 Nest 应用程序实例。
+ * 应用程序的入口文件，使用 Fastify 适配器，并注册 gzip 与 multipart。
  */
 async function bootstrap() {
-  // 1. 创建应用实例
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule,
+    new FastifyAdapter(),
+  );
 
-  app.useStaticAssets('pages');
+  await app.register(compress as any, { global: true });
+  await app.register(multipart as any, {
+    limits: { fileSize: UPLOAD_CONFIG.maxFileSize },
+  });
 
-  // 2. 全局注册响应拦截器
+  app.useStaticAssets({
+    root: join(process.cwd(), 'pages'),
+  });
+
   app.useGlobalInterceptors(new ResponseInterceptor());
-
-  // 3. 全局注册异常过滤器
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  // 4. 启用CORS支持
   app.enableCors({
-    origin: true, // 允许所有来源，生产环境建议指定具体域名
+    origin: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
@@ -44,16 +52,15 @@ async function bootstrap() {
       'Access-Control-Request-Method',
       'Access-Control-Request-Headers',
     ],
-    exposedHeaders: [
-      'Content-Disposition', // 暴露 Content-Disposition 响应头，用于文件下载时获取文件名
-    ],
-    credentials: true, // 允许携带凭证
+    exposedHeaders: ['Content-Disposition'],
+    credentials: true,
     preflightContinue: false,
     optionsSuccessStatus: 204,
   });
 
-  // 5. 监听端口，启动应用
-  await app.listen(process.env.PORT ?? 3000);
-  console.log('location: http://localhost:' + (process.env.PORT ?? 3000));
+  const port = Number(process.env.PORT) || 3000;
+  const host = '0.0.0.0';
+  await app.listen(port, host);
+  console.log(`location: http://localhost:${port}`);
 }
 bootstrap();
