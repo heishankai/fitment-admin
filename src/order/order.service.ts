@@ -11,6 +11,7 @@ import { Materials } from '../materials/materials.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CreateOrderAdminDto } from './dto/create-order-admin.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import { UpdateOrderHouseInfoDto } from './dto/update-order-house-info.dto';
 import { QueryOrderDto } from './dto/query-order.dto';
 import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
 import { AcceptWorkPriceDto } from './dto/accept-work-price.dto';
@@ -426,9 +427,11 @@ export class OrderService {
       // 7. 创建订单（直接分配给工匠，状态为已接单）
       const order = this.orderRepository.create({
         area: String(createOrderAdminDto.area), // 转换为字符串存储
+        housing_name: createOrderAdminDto.housing_name,
         houseType: createOrderAdminDto.houseType,
         roomType: createOrderAdminDto.roomType,
         location: createOrderAdminDto.location,
+        remark: createOrderAdminDto.remark,
         city: null,
         district: null,
         province: null,
@@ -817,13 +820,16 @@ export class OrderService {
   }
 
   /**
-   * 更新订单平米数
-   * 工长订单会同步重新计算工长费用、平台服务费、上门次数
+   * 更新订单房屋信息
+   * 面积变更时，工长订单会同步重新计算工长费用、平台服务费、上门次数
    * @param orderId 订单ID
-   * @param area 面积（㎡）
+   * @param updateOrderHouseInfoDto 房屋信息
    * @returns 更新后的订单
    */
-  async updateOrderArea(orderId: number, area: number): Promise<Order> {
+  async updateOrderHouseInfo(
+    orderId: number,
+    updateOrderHouseInfoDto: UpdateOrderHouseInfoDto,
+  ): Promise<Order> {
     try {
       const order = await this.orderRepository.findOne({
         where: { id: orderId },
@@ -833,11 +839,44 @@ export class OrderService {
         throw new HttpException('订单不存在', HttpStatus.NOT_FOUND);
       }
 
-      // 更新面积（order.area 为 string 类型）
-      order.area = String(area);
+      const { area, housing_name, location, roomType, remark } =
+        updateOrderHouseInfoDto;
+      const areaValue = area ?? null;
+      const hasArea = areaValue !== null;
+      const hasUpdate =
+        hasArea ||
+        housing_name !== undefined ||
+        location !== undefined ||
+        roomType !== undefined ||
+        remark !== undefined;
+
+      if (!hasUpdate) {
+        throw new HttpException('请至少传入一个要修改的字段', HttpStatus.BAD_REQUEST);
+      }
+
+      if (housing_name !== undefined) {
+        order.housing_name = housing_name;
+      }
+      if (location !== undefined) {
+        order.location = location;
+      }
+      if (roomType !== undefined) {
+        order.roomType = roomType;
+      }
+      if (remark !== undefined) {
+        order.remark = remark;
+      }
+      if (hasArea) {
+        // 更新面积（order.area 为 string 类型）
+        order.area = String(areaValue);
+      }
 
       // 工长订单需要重新计算工长费用、平台服务费、上门次数
-      if (order.order_type === 'gangmaster' && !order.parent_order_id) {
+      if (
+        hasArea &&
+        order.order_type === 'gangmaster' &&
+        !order.parent_order_id
+      ) {
         const mainWorkItems = await this.workPriceItemRepository.find({
           where: {
             order_id: orderId,
@@ -850,7 +889,7 @@ export class OrderService {
           0,
         );
 
-        const foremanResult = calcForeman(area, constructionCost);
+        const foremanResult = calcForeman(areaValue as number, constructionCost);
         order.gangmaster_cost = foremanResult.foremanFee;
         order.visiting_service_num = foremanResult.visits;
         order.total_service_fee =
@@ -2873,11 +2912,13 @@ export class OrderService {
         // 4.2 创建工匠订单（复制父订单的基本信息）
         const craftsmanOrder = this.orderRepository.create({
           area: parentOrder.area,
+          housing_name: parentOrder.housing_name,
           city: parentOrder.city,
           district: parentOrder.district,
           houseType: parentOrder.houseType,
           roomType: parentOrder.roomType,
           location: parentOrder.location,
+          remark: parentOrder.remark,
           latitude: parentOrder.latitude,
           longitude: parentOrder.longitude,
           province: parentOrder.province,

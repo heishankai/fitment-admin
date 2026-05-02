@@ -32,6 +32,9 @@ export class Order {
   @Column({ type: 'varchar', length: 50, nullable: true })
   area: string; // 面积
 
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  housing_name: string; // 小区名称
+
   @Column({ type: 'varchar', length: 50, nullable: true })
   city: string; // 城市
 
@@ -89,7 +92,7 @@ export class Order {
   @Column({ type: 'varchar', length: 100, nullable: true })
   serviceTime: string; // 期望上门时间
 
-  @Column({ type: 'varchar', length: 500, nullable: true })
+  @Column({ type: 'varchar', length: 800, nullable: true })
   remark: string; // 备注说明
 
   // 订单编号

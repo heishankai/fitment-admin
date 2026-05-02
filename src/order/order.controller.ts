@@ -30,7 +30,7 @@ import { AcceptWorkPriceDto } from './dto/accept-work-price.dto';
 import { AcceptSingleWorkPriceDto } from './dto/accept-single-work-price.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { ConfirmWorkPriceServiceFeeDto } from './dto/confirm-work-price-service-fee.dto';
-import { UpdateOrderAreaDto } from './dto/update-order-area.dto';
+import { UpdateOrderHouseInfoDto } from './dto/update-order-house-info.dto';
 
 @Controller('order')
 export class OrderController {
@@ -354,26 +354,26 @@ export class OrderController {
   }
 
   /**
-   * 更新订单平米数
-   * 工长订单会同步重新计算工长费用、平台服务费、上门次数
+   * 更新订单房屋信息
+   * 面积变更时，工长订单会同步重新计算工长费用、平台服务费、上门次数
    * @param id 订单ID
-   * @param body 面积信息
+   * @param body 房屋信息
    * @returns 更新后的订单
    */
-  @Put(':id/area')
-  async updateOrderArea(
+  @Put(':id/house-info')
+  async updateOrderHouseInfo(
     @Param('id', ParseIntPipe) id: number,
-    @Body(ValidationPipe) body: UpdateOrderAreaDto,
+    @Body(ValidationPipe) body: UpdateOrderHouseInfoDto,
   ) {
     try {
-      return await this.orderService.updateOrderArea(id, body.area);
+      return await this.orderService.updateOrderHouseInfo(id, body);
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
       }
-      this.logger.error('更新订单平米数失败:', error);
+      this.logger.error('更新订单房屋信息失败:', error);
       throw new HttpException(
-        '更新订单平米数失败',
+        '更新订单房屋信息失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

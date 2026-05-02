@@ -5,6 +5,7 @@ import {
   IsOptional,
   Min,
   Max,
+  MaxLength,
 } from 'class-validator';
 
 /**
@@ -14,6 +15,11 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   area?: string; // 面积
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200, { message: '小区名称不能超过200字' })
+  housing_name?: string; // 小区名称
 
   @IsOptional()
   @IsString()
@@ -45,6 +51,7 @@ export class CreateOrderDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(800, { message: '备注不能超过800字' })
   remark?: string; // 备注说明
 
   @IsOptional()

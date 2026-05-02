@@ -1,7 +1,9 @@
 import {
+  IsOptional,
   IsString,
   IsNumber,
   IsNotEmpty,
+  MaxLength,
 } from 'class-validator';
 
 /**
@@ -11,6 +13,11 @@ export class CreateOrderAdminDto {
   @IsNotEmpty({ message: '面积不能为空' })
   @IsNumber({}, { message: '面积必须是数字' })
   area: number; // 面积
+
+  @IsOptional()
+  @IsString({ message: '小区名称必须是字符串' })
+  @MaxLength(200, { message: '小区名称不能超过200字' })
+  housing_name?: string; // 小区名称
 
   @IsNotEmpty({ message: '房屋类型不能为空' })
   @IsString({ message: '房屋类型必须是字符串' })
@@ -23,6 +30,11 @@ export class CreateOrderAdminDto {
   @IsNotEmpty({ message: '详细地址不能为空' })
   @IsString({ message: '详细地址必须是字符串' })
   location: string; // 详细地址
+
+  @IsOptional()
+  @IsString({ message: '备注必须是字符串' })
+  @MaxLength(800, { message: '备注不能超过800字' })
+  remark?: string; // 备注说明
 
   @IsNotEmpty({ message: '工匠用户ID不能为空' })
   @IsNumber({}, { message: '工匠用户ID必须是数字' })
