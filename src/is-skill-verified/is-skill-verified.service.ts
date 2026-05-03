@@ -240,6 +240,10 @@ export class IsSkillVerifiedService {
         if (createIsSkillVerifiedDto.skill_intro !== undefined) {
           updateData.skill_intro = createIsSkillVerifiedDto.skill_intro;
         }
+        if (createIsSkillVerifiedDto.relatedCraftsmanUserId !== undefined) {
+          updateData.relatedCraftsmanUserId =
+            createIsSkillVerifiedDto.relatedCraftsmanUserId ?? null;
+        }
         await this.isSkillVerifiedRepository.update(existing.id, updateData);
         return null;
       }
@@ -294,13 +298,20 @@ export class IsSkillVerifiedService {
   }
 
   /**
-   * 根据用户ID获取技能认证记录（包含用户的 isSkillVerified 状态）
+   * 根据用户ID获取技能认证记录（含认证状态；若有 relatedCraftsmanUserId 则附带关联工匠昵称与手机号）
    * @param userId 用户ID
-   * @returns 技能认证记录（包含用户的 isSkillVerified 状态）
+   * @returns 技能认证记录（含 isSkillVerified、relatedCraftsmanNickname、relatedCraftsmanPhone）
    */
   async findByUserIdWithVerified(
     userId: number,
-  ): Promise<(IsSkillVerified & { isSkillVerified: boolean }) | null> {
+  ): Promise<
+    | (IsSkillVerified & {
+        isSkillVerified: boolean;
+        relatedCraftsmanNickname: string | null;
+        relatedCraftsmanPhone: string | null;
+      })
+    | null
+  > {
     // 查询技能认证记录
     const isSkillVerified = await this.isSkillVerifiedRepository.findOne({
       where: { userId },
@@ -316,10 +327,25 @@ export class IsSkillVerifiedService {
       return null;
     }
 
+    let relatedCraftsmanNickname: string | null = null;
+    let relatedCraftsmanPhone: string | null = null;
+    if (isSkillVerified.relatedCraftsmanUserId != null) {
+      const related = await this.craftsmanUserRepository.findOne({
+        where: { id: isSkillVerified.relatedCraftsmanUserId },
+        select: ['nickname', 'phone'],
+      });
+      if (related) {
+        relatedCraftsmanNickname = related.nickname ?? null;
+        relatedCraftsmanPhone = related.phone ?? null;
+      }
+    }
+
     // 返回包含用户技能认证状态的数据
     return {
       ...isSkillVerified,
       isSkillVerified: user?.isSkillVerified || false,
+      relatedCraftsmanNickname,
+      relatedCraftsmanPhone,
     };
   }
 

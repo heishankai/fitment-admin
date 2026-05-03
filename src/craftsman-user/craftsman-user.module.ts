@@ -5,6 +5,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { CraftsmanUser } from './craftsman-user.entity';
 import { IsSkillVerified } from '../is-skill-verified/is-skill-verified.entity';
 import { Order } from '../order/order.entity';
+import { WorkKind } from '../work-kind/work-kind.entity';
 // controller
 import { CraftsmanUserController } from './craftsman-user.controller';
 // service
@@ -16,7 +17,7 @@ import { SmsModule } from '../sms/sms.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([CraftsmanUser, IsSkillVerified, Order]),
+    TypeOrmModule.forFeature([CraftsmanUser, IsSkillVerified, Order, WorkKind]),
     JwtModule.register({
       secret: JWT_CONFIG.secret,
       signOptions: { expiresIn: JWT_CONFIG.expiresIn },

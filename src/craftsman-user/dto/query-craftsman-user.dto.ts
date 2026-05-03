@@ -35,5 +35,13 @@ export class QueryCraftsmanUserDto {
   @IsOptional()
   @IsString({ message: '手机号必须是字符串' })
   phone?: string;
+
+  /**
+   * 工种编码（精准匹配：`is_skill_verified.work_kind_code` 与入参全等 `=`，非模糊查询）；
+   * 须为 `work_kind` 表中已配置的编码，可参考 `CraftsmanUserPageWorkKindCode` 枚举）
+   */
+  @IsOptional()
+  @IsString({ message: '工种编码必须是字符串' })
+  work_kind_code?: string;
 }
 

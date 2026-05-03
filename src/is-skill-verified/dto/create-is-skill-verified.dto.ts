@@ -4,6 +4,8 @@ import {
   IsOptional,
   IsNotEmpty,
   ValidateNested,
+  IsInt,
+  Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -20,6 +22,14 @@ class VideoUrlDto {
 }
 
 export class CreateIsSkillVerifiedDto {
+  /**
+   * 关联的工匠用户 ID（非必填）
+   */
+  @IsOptional()
+  @IsInt({ message: '关联工匠用户ID必须是整数' })
+  @Min(1, { message: '关联工匠用户ID无效' })
+  relatedCraftsmanUserId?: number;
+
   // 承诺图片
   @IsArray()
   @IsOptional()

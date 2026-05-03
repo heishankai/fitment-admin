@@ -11,9 +11,13 @@ export class IsSkillVerified {
   @PrimaryGeneratedColumn()
   id: number;
 
-  // 关联的师傅用户ID
+  // 申报人工匠用户 ID（本条技能认证归属）
   @Column()
   userId: number;
+
+  // 关联的工匠用户 ID（可选，如推荐人 / 绑定关系等）
+  @Column({ type: 'int', nullable: true })
+  relatedCraftsmanUserId: number | null;
 
   // 承诺图片
   @Column({ type: 'json', nullable: true })

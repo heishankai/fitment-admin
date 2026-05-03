@@ -70,12 +70,19 @@ export class IsSkillVerifiedController {
   /**
    * 根据token获取当前用户的技能认证记录
    * @param request 请求对象（包含从token解析的用户信息）
-   * @returns 技能认证记录（包含用户的 isSkillVerified 状态）
+   * @returns 技能认证记录（包含用户的 isSkillVerified，以及关联工匠昵称、手机号）
    */
   @Get('my')
   async getMySkillVerification(
     @Request() request: any,
-  ): Promise<(IsSkillVerified & { isSkillVerified: boolean }) | null> {
+  ): Promise<
+    | (IsSkillVerified & {
+        isSkillVerified: boolean;
+        relatedCraftsmanNickname: string | null;
+        relatedCraftsmanPhone: string | null;
+      })
+    | null
+  > {
     try {
       // 从token中获取userId
       const userId = request.user?.userid || request.user?.userId;
@@ -107,14 +114,21 @@ export class IsSkillVerifiedController {
   }
 
   /**
-   * 根据用户ID获取技能认证记录（包含用户的 isSkillVerified 状态）
+   * 根据用户ID获取技能认证记录
    * @param userId 用户ID
-   * @returns 技能认证记录（包含用户的 isSkillVerified 状态）
+   * @returns 技能认证记录（含 isSkillVerified；若有 relatedCraftsmanUserId 则附带关联工匠昵称与手机号）
    */
   @Get('user/:userId')
   async findByUserId(
     @Param('userId', ParseIntPipe) userId: number,
-  ): Promise<(IsSkillVerified & { isSkillVerified: boolean }) | null> {
+  ): Promise<
+    | (IsSkillVerified & {
+        isSkillVerified: boolean;
+        relatedCraftsmanNickname: string | null;
+        relatedCraftsmanPhone: string | null;
+      })
+    | null
+  > {
     return await this.isSkillVerifiedService.findByUserIdWithVerified(userId);
   }
 

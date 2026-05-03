@@ -1,4 +1,11 @@
-import { IsOptional, IsArray, IsString, ValidateNested } from 'class-validator';
+import {
+  IsOptional,
+  IsArray,
+  IsString,
+  ValidateNested,
+  IsInt,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 class ImageUrlDto {
@@ -15,6 +22,14 @@ class VideoUrlDto {
  * 更新技能认证信息DTO
  */
 export class UpdateIsSkillVerifiedDto {
+  /**
+   * 关联的工匠用户 ID（非必填）
+   */
+  @IsOptional()
+  @IsInt({ message: '关联工匠用户ID必须是整数' })
+  @Min(1, { message: '关联工匠用户ID无效' })
+  relatedCraftsmanUserId?: number;
+
   /**
    * 承诺图片
    */

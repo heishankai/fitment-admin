@@ -106,7 +106,7 @@ export class CraftsmanUserController {
 
   /**
    * 分页查询工匠用户
-   * @param queryDto 查询参数 {pageIndex, pageSize, nickname, phone}
+   * @param queryDto 查询参数 {pageIndex, pageSize, nickname, phone?, work_kind_code?}
    * @returns 分页结果
    */
   @Public() // 允许微信用户访问，用于选择工匠

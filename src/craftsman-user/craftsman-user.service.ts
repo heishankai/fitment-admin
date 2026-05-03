@@ -1,4 +1,9 @@
-import { Injectable, HttpException, HttpStatus, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  HttpException,
+  HttpStatus,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
@@ -8,6 +13,7 @@ import { JWT_CONFIG } from '../common/constants/app.constants';
 import { CraftsmanUser } from './craftsman-user.entity';
 import { IsSkillVerified } from '../is-skill-verified/is-skill-verified.entity';
 import { Order, OrderStatus } from '../order/order.entity';
+import { WorkKind } from '../work-kind/work-kind.entity';
 import { LoginDto } from './dto/login.dto';
 import { UpdateCraftsmanUserDto } from './dto/update-craftsman-user.dto';
 import { QueryCraftsmanUserDto } from './dto/query-craftsman-user.dto';
@@ -22,6 +28,8 @@ export class CraftsmanUserService {
     private readonly isSkillVerifiedRepository: Repository<IsSkillVerified>,
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
+    @InjectRepository(WorkKind)
+    private readonly workKindRepository: Repository<WorkKind>,
     private readonly jwtService: JwtService,
     private readonly smsService: SmsService,
   ) {}
@@ -270,7 +278,7 @@ export class CraftsmanUserService {
 
   /**
    * 分页查询工匠用户
-   * @param queryDto 查询参数 {pageIndex, pageSize, nickname, phone}
+   * @param queryDto 查询参数 {pageIndex, pageSize, nickname, phone, work_kind_code?}
    * @returns 分页结果
    */
   async getCraftsmanUsersByPage(
@@ -284,10 +292,35 @@ export class CraftsmanUserService {
         nickname = '',
         phone = '',
       } = queryDto;
+      const workKindCodeTrimmed = queryDto.work_kind_code?.trim() || '';
+
+      if (workKindCodeTrimmed) {
+        const workKindExists = await this.workKindRepository.exist({
+          where: { work_kind_code: workKindCodeTrimmed }, // work_kind 表精准匹配
+        });
+        if (!workKindExists) {
+          throw new BadRequestException('工种编码不存在或未启用');
+        }
+      }
 
       // 创建查询构建器
       const query =
         this.craftsmanUserRepository.createQueryBuilder('craftsman_user');
+
+      if (workKindCodeTrimmed) {
+        // work_kind_code：与技能表字段全等（精准匹配），不使用 LIKE
+        const subQ = this.isSkillVerifiedRepository
+          .createQueryBuilder('vs_sub')
+          .select('vs_sub.userId')
+          .where('vs_sub.work_kind_code = :wkPageFilter', {
+            wkPageFilter: workKindCodeTrimmed,
+          });
+        query.andWhere(`craftsman_user.id IN (${subQ.getQuery()})`);
+        query.setParameters({
+          ...query.getParameters(),
+          ...subQ.getParameters(),
+        });
+      }
 
       // 添加筛选条件
       if (nickname) {
@@ -345,6 +378,9 @@ export class CraftsmanUserService {
         pageTotal: Math.ceil(total / pageSize),
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       console.error('分页查询错误:', error);
       return {
         success: false,
