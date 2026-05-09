@@ -44,6 +44,7 @@ import {
   ConstructionProgressModule,
   MaterialsModule,
   PlatformIncomeRecordModule,
+  PaymentRecordModule,
   WorkPriceItemModule,
   IndependentPageConfigModule,
   GetPriceModule,
@@ -111,6 +112,7 @@ import { WstModule } from './wst/wst.module';
     ConstructionProgressModule, // 施工进度模块
     MaterialsModule, // 辅材模块
     PlatformIncomeRecordModule, // 平台收支记录模块
+    PaymentRecordModule, // 业主付款记录模块
     WorkPriceItemModule, // 工价项模块
     GetPriceModule, // 获取报价模块
     WelcomeModule, // 欢迎页配置模块

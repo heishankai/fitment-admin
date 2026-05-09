@@ -199,13 +199,27 @@ async function generateOrderNo(
 
 /** 单个工价验收上下文（批量前置校验与执行复用） */
 interface AcceptSingleWorkPriceContext {
-  workPriceItem: WorkPriceItem;
   order: Order;
   targetWorkPriceItem: WorkPriceItem;
   parentOrder: Order;
   assignedCraftsmanId: number;
   isGangmasterOrder: boolean;
-  isCraftsmanOrder: boolean;
+}
+
+/** 订单「平台服务费 / 工长费」微信预下单入参（与 WxPayOrderFeesDto、WxPayService 对齐） */
+export interface OrderFeeWxPayPreviewParams {
+  pay_type:
+    | (typeof WX_PAY_CONFIG.payType)['ORDER_PLATFORM_SERVICE_FEE']
+    | (typeof WX_PAY_CONFIG.payType)['ORDER_GANGMASTER_COST'];
+  order_id: number;
+  fee_indexes?: number[];
+}
+
+export interface OrderFeeWxPayPreviewResult {
+  orderId: number;
+  totalAmount: number;
+  description: string;
+  feeIndexes: number[];
 }
 
 @Injectable()
@@ -1041,6 +1055,385 @@ export class OrderService {
     return order;
   }
 
+  private toMoney(value: number | string | null | undefined): number {
+    return new Decimal(value || 0).toDecimalPlaces(2).toNumber();
+  }
+
+  private sumWorkItems(workItems: WorkPriceItem[]): number {
+    return workItems
+      .reduce((sum, item) => {
+        const amount = item.settlement_amount ?? item.calculateSettlementAmount();
+        return sum.plus(amount || 0);
+      }, new Decimal(0))
+      .toDecimalPlaces(2)
+      .toNumber();
+  }
+
+  private normalizeMoneyList(value: any, scalarValue?: number | null): number[] {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.toMoney(item));
+    }
+
+    const scalar = Number(scalarValue) || 0;
+    return scalar > 0 ? [this.toMoney(scalar)] : [];
+  }
+
+  private normalizePaidList(
+    value: any,
+    amountList: number[],
+    fallbackPaid = false,
+  ): boolean[] {
+    const list = Array.isArray(value) ? value : [];
+    return amountList.map((amount, index) => {
+      if (Number(amount) < 0.01) {
+        return true;
+      }
+      if (index < list.length) {
+        return list[index] === true;
+      }
+      return fallbackPaid === true;
+    });
+  }
+
+  private isMoneyListPaid(amountList: number[], paidList: boolean[]): boolean {
+    return amountList.every(
+      (amount, index) => Number(amount) < 0.01 || paidList[index] === true,
+    );
+  }
+
+  private buildFeeDetails(amountList: number[], paidList: boolean[]): any[] {
+    return amountList.map((amount, index) => ({
+      index,
+      amount: this.toMoney(amount),
+      is_paid: Number(amount) < 0.01 || paidList[index] === true,
+    }));
+  }
+
+  private getOrderFeeState(
+    order: Order,
+    feeType: 'service_fee' | 'gangmaster_cost',
+  ): {
+    amountList: number[];
+    paidList: boolean[];
+    details: any[];
+    isPaid: boolean;
+    unpaidIndexes: number[];
+    unpaidAmount: number;
+    totalAmount: number;
+  } {
+    const isServiceFee = feeType === 'service_fee';
+    const amountList = this.normalizeMoneyList(
+      isServiceFee ? order.total_service_fee_list : order.gangmaster_cost_list,
+      isServiceFee ? order.total_service_fee : order.gangmaster_cost,
+    );
+    const paidList = this.normalizePaidList(
+      isServiceFee
+        ? order.total_service_fee_paid_list
+        : order.gangmaster_cost_paid_list,
+      amountList,
+      isServiceFee
+        ? order.total_service_fee_is_paid
+        : order.gangmaster_cost_is_paid,
+    );
+    const unpaidIndexes = amountList
+      .map((amount, index) => ({ amount: Number(amount) || 0, index }))
+      .filter((item) => item.amount >= 0.01 && paidList[item.index] !== true)
+      .map((item) => item.index);
+    const totalAmount = amountList
+      .reduce((sum, amount) => sum.plus(amount || 0), new Decimal(0))
+      .toDecimalPlaces(2)
+      .toNumber();
+    const unpaidAmount = unpaidIndexes
+      .reduce((sum, index) => sum.plus(amountList[index] || 0), new Decimal(0))
+      .toDecimalPlaces(2)
+      .toNumber();
+
+    return {
+      amountList,
+      paidList,
+      details: this.buildFeeDetails(amountList, paidList),
+      isPaid: this.isMoneyListPaid(amountList, paidList),
+      unpaidIndexes,
+      unpaidAmount,
+      totalAmount,
+    };
+  }
+
+  private resolveFeeIndexesForPayment(params: {
+    amountList: number[];
+    paidList: boolean[];
+    feeIndexes?: number[];
+    emptyMessage: string;
+    paidMessage: string;
+  }): number[] {
+    const { amountList, paidList, feeIndexes, emptyMessage, paidMessage } =
+      params;
+    const selected =
+      feeIndexes?.length
+        ? [...new Set(feeIndexes.map((index) => Number(index)))]
+        : amountList
+            .map((amount, index) => ({ amount: Number(amount) || 0, index }))
+            .filter(
+              (item) =>
+                item.amount >= 0.01 && paidList[item.index] !== true,
+            )
+            .map((item) => item.index);
+
+    if (selected.length === 0) {
+      throw new HttpException(emptyMessage, HttpStatus.BAD_REQUEST);
+    }
+
+    for (const index of selected) {
+      if (
+        !Number.isInteger(index) ||
+        index < 0 ||
+        index >= amountList.length
+      ) {
+        throw new HttpException(
+          `费用明细索引 ${index} 不存在`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      if (Number(amountList[index]) < 0.01) {
+        throw new HttpException(
+          `费用明细索引 ${index} 无需支付`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      if (paidList[index] === true) {
+        throw new HttpException(paidMessage, HttpStatus.BAD_REQUEST);
+      }
+    }
+
+    return selected;
+  }
+
+  private sumFeeIndexes(amountList: number[], feeIndexes: number[]): number {
+    return feeIndexes
+      .reduce((sum, index) => sum.plus(amountList[index] || 0), new Decimal(0))
+      .toDecimalPlaces(2)
+      .toNumber();
+  }
+
+  private getWorkKindKey(workKindCode?: string | null, workKindName?: string | null): string {
+    return workKindCode || workKindName || '__UNKNOWN__';
+  }
+
+  private formatMaterial(material: Materials): any {
+    return {
+      id: material.id,
+      commodity_id: material.commodity_id,
+      commodity_name: material.commodity_name,
+      commodity_price: Number(material.commodity_price),
+      commodity_unit: material.commodity_unit,
+      quantity: material.quantity,
+      commodity_cover: material.commodity_cover || [],
+      settlement_amount: Number(material.settlement_amount),
+      work_kind_name: material.work_kind_name || null,
+      work_kind_code: material.work_kind_code || null,
+      craftsman_user_id: material.craftsman_user_id || null,
+      is_paid: material.is_paid,
+      is_accepted: material.is_accepted,
+      createdAt: material.createdAt,
+      updatedAt: material.updatedAt,
+    };
+  }
+
+  private inferOrderWorkKind(
+    orderId: number,
+    orderWorkKindMap: Map<number, { work_kind_code: string | null; work_kind_name: string | null }>,
+    fallbackOrder: Order,
+  ): { work_kind_code: string | null; work_kind_name: string | null } {
+    return (
+      orderWorkKindMap.get(orderId) || {
+        work_kind_code: fallbackOrder.work_kind_code || null,
+        work_kind_name: fallbackOrder.work_kind_name || null,
+      }
+    );
+  }
+
+  private async getRelatedOrderIds(order: Order): Promise<number[]> {
+    if (order.parent_order_id) {
+      return [order.id];
+    }
+
+    const assignedOrders = await this.orderRepository.find({
+      where: {
+        parent_order_id: order.id,
+        is_assigned: true,
+      },
+      select: ['id'],
+    });
+
+    return [order.id, ...assignedOrders.map((item) => item.id)];
+  }
+
+  private async getConstructionProgressByOrderIds(orderIds: number[]): Promise<any[]> {
+    const progressGroups = await Promise.all(
+      orderIds.map(async (id) => {
+        try {
+          return await this.constructionProgressService.findByOrderId(id);
+        } catch (error) {
+          console.error(`查询订单 ${id} 的施工进度失败:`, error);
+          return [];
+        }
+      }),
+    );
+
+    return progressGroups.flat();
+  }
+
+  private buildOrderWorkKindMap(
+    order: Order,
+    workItems: WorkPriceItem[],
+  ): Map<number, { work_kind_code: string | null; work_kind_name: string | null }> {
+    const map = new Map<number, { work_kind_code: string | null; work_kind_name: string | null }>();
+    const byOrderId = new Map<number, WorkPriceItem[]>();
+
+    for (const item of workItems) {
+      if (!byOrderId.has(item.order_id)) {
+        byOrderId.set(item.order_id, []);
+      }
+      byOrderId.get(item.order_id)!.push(item);
+    }
+
+    for (const [orderId, items] of byOrderId.entries()) {
+      const uniqueCodes = [
+        ...new Set(items.map((item) => item.work_kind_code).filter(Boolean)),
+      ];
+      if (uniqueCodes.length === 1) {
+        const matched = items.find(
+          (item) => item.work_kind_code === uniqueCodes[0],
+        );
+        map.set(orderId, {
+          work_kind_code: matched?.work_kind_code || null,
+          work_kind_name: matched?.work_kind_name || null,
+        });
+      }
+    }
+
+    if (!map.has(order.id)) {
+      map.set(order.id, {
+        work_kind_code: order.work_kind_code || null,
+        work_kind_name: order.work_kind_name || null,
+      });
+    }
+
+    return map;
+  }
+
+  private buildWorkPriceGroups(workItems: WorkPriceItem[]): any[] {
+    const groupMap = new Map<number, WorkPriceItem[]>();
+
+    for (const item of workItems) {
+      const groupId = item.work_group_id || 1;
+      if (!groupMap.has(groupId)) {
+        groupMap.set(groupId, []);
+      }
+      groupMap.get(groupId)!.push(item);
+    }
+
+    return Array.from(groupMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([workGroupId, items]) => {
+        const totalPrice = this.sumWorkItems(items);
+        return {
+          work_group_id: workGroupId,
+          total_price: totalPrice,
+          total_is_accepted:
+            items.length > 0 && items.every((item) => item.is_accepted === true),
+          is_paid: items.length > 0 && items.every((item) => item.is_paid === true),
+          total_service_fee: this.toMoney(totalPrice * 0.1),
+          items,
+          sub_work_price_groups: items,
+        };
+      });
+  }
+
+  private buildWorkKindGroups(params: {
+    order: Order;
+    workItems: WorkPriceItem[];
+    materials: Materials[];
+    constructionProgress: any[];
+    orderWorkKindMap: Map<number, { work_kind_code: string | null; work_kind_name: string | null }>;
+  }): any[] {
+    const { order, workItems, materials, constructionProgress, orderWorkKindMap } =
+      params;
+    const groupMap = new Map<string, any>();
+
+    const ensureGroup = (
+      workKindCode?: string | null,
+      workKindName?: string | null,
+    ) => {
+      const key = this.getWorkKindKey(workKindCode, workKindName);
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          work_kind_code: workKindCode || null,
+          work_kind_name: workKindName || null,
+          work_price_items: [],
+          materials: {
+            commodity_list: [],
+            total_price: 0,
+          },
+          construction_progress: [],
+          latest_construction_progress: null,
+        });
+      }
+      return groupMap.get(key);
+    };
+
+    for (const item of workItems) {
+      ensureGroup(item.work_kind_code, item.work_kind_name).work_price_items.push(
+        item,
+      );
+    }
+
+    for (const material of materials) {
+      const inferred = this.inferOrderWorkKind(
+        material.orderId,
+        orderWorkKindMap,
+        order,
+      );
+      const group = ensureGroup(
+        material.work_kind_code || inferred.work_kind_code,
+        material.work_kind_name || inferred.work_kind_name,
+      );
+      const formatted = this.formatMaterial(material);
+      group.materials.commodity_list.push(formatted);
+      group.materials.total_price = this.toMoney(
+        group.materials.total_price + formatted.settlement_amount,
+      );
+    }
+
+    for (const progress of constructionProgress) {
+      const inferred = this.inferOrderWorkKind(
+        progress.orderId,
+        orderWorkKindMap,
+        order,
+      );
+      const group = ensureGroup(
+        progress.work_kind_code || inferred.work_kind_code,
+        progress.work_kind_name || inferred.work_kind_name,
+      );
+      group.construction_progress.push(progress);
+    }
+
+    return Array.from(groupMap.values()).map((group) => {
+      group.total_price = this.sumWorkItems(group.work_price_items);
+      group.total_is_accepted =
+        group.work_price_items.length > 0 &&
+        group.work_price_items.every((item) => item.is_accepted === true);
+      group.is_paid =
+        group.work_price_items.length > 0 &&
+        group.work_price_items.every((item) => item.is_paid === true);
+      group.latest_construction_progress =
+        group.construction_progress.length > 0
+          ? group.construction_progress[0]
+          : null;
+      return group;
+    });
+  }
+
 
   /**
    * 根据ID获取订单（包含关联信息和父工价列表）
@@ -1057,143 +1450,144 @@ export class OrderService {
       throw new HttpException('订单不存在', HttpStatus.NOT_FOUND);
     }
 
-    let allWorkItems: WorkPriceItem[];
+    let allWorkItems = await this.workPriceItemRepository.find({
+      where: { order_id: orderId },
+      relations: ['assigned_craftsman', 'gangmaster_user', 'craftsman_user'],
+      order: { createdAt: 'ASC' },
+    });
 
-    // 如果是分配出去的订单，从父订单查询分配给该工匠的工价项
-    if (order.parent_order_id && order.craftsman_user_id) {
-      // 查询父订单中分配给该工匠的所有工价项（包括主工价和子工价）
+    if (
+      allWorkItems.length === 0 &&
+      order.parent_order_id &&
+      order.craftsman_user_id
+    ) {
       allWorkItems = await this.workPriceItemRepository.find({
         where: {
           order_id: order.parent_order_id,
           assigned_craftsman_id: order.craftsman_user_id,
         },
-        relations: ['assigned_craftsman'],
+        relations: ['assigned_craftsman', 'gangmaster_user', 'craftsman_user'],
         order: { createdAt: 'ASC' },
       });
-    } else {
-      // 普通订单，查询该订单的所有工价项
-      allWorkItems = await this.workPriceItemRepository.find({
-      where: { order_id: orderId },
-      relations: ['assigned_craftsman'],
-      order: { createdAt: 'ASC' },
-    });
     }
 
-    // 查询主工价组（work_group_id = 1 或 null 的工价项）
-    // 对于分配订单：
-    // - 如果分配的是主工价，父订单的工价项 work_group_id = 1
-    // - 如果分配的是子工价，父订单的工价项 work_group_id > 1，但在分配订单中显示时应该作为主工价项处理
-    // 所以对于分配订单，返回所有分配给该工匠的工价项（无论 work_group_id 是多少）
-    // 对于普通订单，只返回主工价组（work_group_id = 1 或 null）
-    const mainWorkItems = order.parent_order_id && order.craftsman_user_id
-      ? allWorkItems // 分配订单：返回所有分配给该工匠的工价项
-      : allWorkItems.filter((item) => !item.work_group_id || item.work_group_id === 1); // 普通订单：只返回主工价组
+    const relatedOrderIds = await this.getRelatedOrderIds(order);
+    const [materials, constructionProgress] = await Promise.all([
+      this.materialsRepository.find({
+        where: { orderId: In(relatedOrderIds) },
+        order: { createdAt: 'DESC' },
+      }),
+      this.getConstructionProgressByOrderIds(relatedOrderIds),
+    ]);
+    constructionProgress.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
 
-    // 计算主工价组的统计信息（如果存在主工价组）
+    const extraRelatedOrderIds = relatedOrderIds.filter((id) => id !== orderId);
+    const relatedWorkItemsForKind =
+      extraRelatedOrderIds.length > 0
+        ? [
+            ...allWorkItems,
+            ...(await this.workPriceItemRepository.find({
+              where: { order_id: In(extraRelatedOrderIds) },
+              order: { createdAt: 'ASC' },
+            })),
+          ]
+        : allWorkItems;
+    const orderWorkKindMap = this.buildOrderWorkKindMap(
+      order,
+      relatedWorkItemsForKind,
+    );
+    const workKindGroups = this.buildWorkKindGroups({
+      order,
+      workItems: allWorkItems,
+      materials,
+      constructionProgress,
+      orderWorkKindMap,
+    });
+    const latestProgressByWorkKind = new Map<string, any>();
+    for (const group of workKindGroups) {
+      latestProgressByWorkKind.set(
+        this.getWorkKindKey(group.work_kind_code, group.work_kind_name),
+        group.latest_construction_progress,
+      );
+    }
+
+    const mainWorkItems = allWorkItems;
+
+    // parent_work_price_groups 已改为返回当前订单的所有工价项，不再区分主/子工价。
     let total_price = 0;
     let total_is_accepted = false;
     let is_paid = false;
 
     if (mainWorkItems.length > 0) {
-      // total_price: 施工费用（不包含工长费用，只计算主工价组（work_group_id = 1）的 settlement_amount 之和）
-      // 注意：总是重新计算 settlement_amount，确保考虑最低价格逻辑正确
-      total_price = mainWorkItems.reduce((sum, item) => {
-        // 重新计算 settlement_amount（考虑最低价格），确保计算正确
-        const settlementAmount = item.calculateSettlementAmount();
-        return sum + settlementAmount;
-      }, 0);
+      total_price = this.sumWorkItems(mainWorkItems);
 
-      // total_is_accepted: 整组工价列表的总验收状态（只检查主工价组，不包括子工价组）
+      // total_is_accepted: 整组工价列表的总验收状态
       // 全部为true就为true，否则就为false
       total_is_accepted =
         mainWorkItems.length > 0 &&
         mainWorkItems.every((item) => item.is_accepted === true);
 
-      // is_paid: 用户是否已付款（只检查主工价组，不包括子工价组）
+      // is_paid: 用户是否已付款
       // 全部为true就为true，否则就为false
       is_paid =
         mainWorkItems.length > 0 &&
         mainWorkItems.every((item) => item.is_paid === true);
     }
 
-    // 按 work_group_id 分组，返回所有工价组
-    // 主工价组（work_group_id = 1）作为 parent_work_price_groups 返回
-    // 为每个工价项添加最新的施工进度数据
-    const parentWorkPriceGroups = await Promise.all(
-      mainWorkItems.map(async (item) => {
-        let latestConstructionProgress = null;
-
-        // 如果工价项已分配给工匠，查询对应的施工进度
-        if (item.assigned_craftsman_id) {
-          try {
-            // 确定要查询的订单ID
-            let targetOrderId: number | null = null;
-
-            // 判断当前查询的是分配订单还是普通订单
-            if (order.parent_order_id && order.craftsman_user_id) {
-              // 当前查询的是分配订单（工匠订单）
-              // 工价项在父订单中，需要找到对应的工匠订单来查询施工进度
-              // 当前订单就是对应的工匠订单
-              targetOrderId = orderId;
-            } else {
-              // 当前查询的是普通订单（工长订单）
-              // 工价项在当前订单中，如果已分配给工匠，需要找到对应的工匠订单
-              const craftsmanOrder = await this.orderRepository.findOne({
-                where: {
-                  parent_order_id: item.order_id,
-                  craftsman_user_id: item.assigned_craftsman_id,
-                  is_assigned: true,
-                },
-              });
-
-              if (craftsmanOrder) {
-                // 找到了对应的工匠订单，查询工匠订单的施工进度
-                targetOrderId = craftsmanOrder.id;
-              } else {
-                // 如果没有找到工匠订单，说明工价项还未分配给工匠，或者工价项在当前订单中
-                // 直接使用当前订单ID查询施工进度
-                targetOrderId = orderId;
-              }
-            }
-
-            // 查询该订单的所有施工进度，按创建时间倒序排列，取最新的一条
-            if (targetOrderId) {
-              const constructionProgressList =
-                await this.constructionProgressService.findByOrderId(targetOrderId);
-
-              if (constructionProgressList && constructionProgressList.length > 0) {
-                // 取最新的一条施工进度（已经是按 createdAt DESC 排序的）
-                latestConstructionProgress = constructionProgressList[0];
-              }
-            }
-          } catch (error) {
-            // 查询施工进度失败不影响订单查询，只记录错误
-            console.error(
-              `查询工价项 ${item.id} 的施工进度失败:`,
-              error,
-            );
-          }
-        }
-
-        return {
-          ...item,
-          latest_construction_progress: latestConstructionProgress,
-        };
-      }),
+    const enrichWorkItem = (item: WorkPriceItem) => ({
+      ...item,
+      latest_construction_progress:
+        latestProgressByWorkKind.get(
+          this.getWorkKindKey(item.work_kind_code, item.work_kind_name),
+        ) || null,
+    });
+    const allWorkItemsWithProgress = allWorkItems.map(enrichWorkItem);
+    const parentWorkPriceGroups = mainWorkItems.map(enrichWorkItem);
+    const totalServiceFeeState = this.getOrderFeeState(order, 'service_fee');
+    const gangmasterCostState = this.getOrderFeeState(
+      order,
+      'gangmaster_cost',
     );
+    const {
+      total_service_fee_list: _totalServiceFeeList,
+      total_service_fee_paid_list: _totalServiceFeePaidList,
+      gangmaster_cost_list: _gangmasterCostList,
+      gangmaster_cost_paid_list: _gangmasterCostPaidList,
+      ...orderResponse
+    } = order as any;
 
     // 返回订单信息，包含父工价列表和统计信息（在订单级别）
     return {
-      ...order,
+      ...orderResponse,
       parent_work_price_groups: parentWorkPriceGroups,
+      all_work_price_items: allWorkItemsWithProgress,
       // 第一组工价的统计信息（在订单级别返回）
       visiting_service_num: order.visiting_service_num || 0,
       total_service_fee: Number(order.total_service_fee) || 0,
-      total_service_fee_is_paid: order.total_service_fee_is_paid || false,
+      total_service_fee_details: totalServiceFeeState.details,
+      total_service_fee_unpaid_amount: totalServiceFeeState.unpaidAmount,
+      total_service_fee_is_paid: totalServiceFeeState.isPaid,
       gangmaster_cost: order.gangmaster_cost || 0,
+      gangmaster_cost_details: gangmasterCostState.details,
+      gangmaster_cost_unpaid_amount: gangmasterCostState.unpaidAmount,
+      gangmaster_cost_is_paid: gangmasterCostState.isPaid,
       total_is_accepted,
       total_price,
+      all_total_price: this.sumWorkItems(allWorkItems),
       is_paid,
+      materials: {
+        commodity_list: materials.map((material) => this.formatMaterial(material)),
+        total_price: this.toMoney(
+          materials.reduce(
+            (sum, material) => sum + Number(material.settlement_amount || 0),
+            0,
+          ),
+        ),
+      },
+      construction_progress: constructionProgress,
       // 工匠信息（昵称和手机号码）
       craftsman_nickname: order.craftsman_user?.nickname || null,
       craftsman_phone: order.craftsman_user?.phone || null,
@@ -2874,21 +3268,6 @@ export class OrderService {
         );
       }
 
-      // 检查分配的工价项类型：如果同时包含主工价和子工价，则报错
-      const mainWorkItems = workPriceItems.filter(
-        (item) => !item.work_group_id || item.work_group_id === 1,
-      );
-      const subWorkItems = workPriceItems.filter(
-        (item) => item.work_group_id && item.work_group_id > 1,
-      );
-
-      if (mainWorkItems.length > 0 && subWorkItems.length > 0) {
-        throw new HttpException(
-          '不能同时分配主工价和子工价，请分别分配',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
       // 4. 检查该工匠是否已经有从该工长订单分配的订单
       const existingCraftsmanOrder = await this.orderRepository.findOne({
         where: {
@@ -2960,6 +3339,8 @@ export class OrderService {
           is_paid: false, // 新订单的工价项默认未支付
           is_accepted: false, // 新订单的工价项默认未验收
           assigned_craftsman_id: craftsman_id,
+          gangmaster_user_id: parentOrder.craftsman_user_id || null,
+          craftsman_user_id: craftsman_id,
           settlement_amount: item.settlement_amount, // 复制结算金额
           created_by: 'craftsman',
           work_group_id: 1, // 无论是主工价还是子工价，在分配订单中都作为主工价项
@@ -2990,6 +3371,9 @@ export class OrderService {
       // 6. 标记原工价项为已分配（保留在工长单中，只是标记为已分配）
       for (const item of workPriceItems) {
         item.assigned_craftsman_id = craftsman_id;
+        item.gangmaster_user_id =
+          item.gangmaster_user_id || parentOrder.craftsman_user_id || null;
+        item.craftsman_user_id = craftsman_id;
         await this.workPriceItemRepository.save(item);
       }
 
@@ -3008,7 +3392,12 @@ export class OrderService {
 
       // 8. 更新工匠订单的 total_service_fee
       savedCraftsmanOrder.total_service_fee = totalServiceFee;
-      savedCraftsmanOrder.total_service_fee_is_paid = false; // 默认未支付
+      savedCraftsmanOrder.total_service_fee_list = [totalServiceFee];
+      savedCraftsmanOrder.total_service_fee_paid_list =
+        totalServiceFee >= 0.01 ? [false] : [true];
+      savedCraftsmanOrder.gangmaster_cost_list = [];
+      savedCraftsmanOrder.gangmaster_cost_paid_list = [];
+      savedCraftsmanOrder.total_service_fee_is_paid = totalServiceFee < 0.01;
       await this.orderRepository.save(savedCraftsmanOrder);
 
       // 9. 返回工匠订单（使用 findOne 方法确保返回完整的订单信息，包括 parent_work_price_groups）
@@ -3047,20 +3436,16 @@ export class OrderService {
         );
       }
 
-      // 2. 标记平台服务费为已支付
-      order.total_service_fee_is_paid = true;
-      await this.orderRepository.save(order);
-
-      // 3. 创建平台收支记录（订单级别的平台服务费）
-      const totalServiceFee = Number(order.total_service_fee) || 0;
-      if (totalServiceFee > 0) {
-        await this.platformIncomeRecordService.create({
-          orderId: order.id,
-          order_no: order.order_no,
-          cost_type: CostType.SERVICE_FEE,
-          cost_amount: totalServiceFee,
-        });
+      const state = this.getOrderFeeState(order, 'service_fee');
+      if (state.unpaidAmount < 0.01) {
+        order.total_service_fee_list = state.amountList;
+        order.total_service_fee_paid_list = state.paidList;
+        order.total_service_fee_is_paid = true;
+        await this.orderRepository.save(order);
+        return;
       }
+
+      await this.confirmOrderPlatformServiceFeeWxPay(orderId);
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
@@ -3102,15 +3487,13 @@ export class OrderService {
           HttpStatus.BAD_REQUEST,
         );
       }
-      if (order.gangmaster_cost_is_paid) {
+      const state = this.getOrderFeeState(order, 'gangmaster_cost');
+      if (state.unpaidAmount < 0.01) {
+        order.gangmaster_cost_list = state.amountList;
+        order.gangmaster_cost_paid_list = state.paidList;
+        order.gangmaster_cost_is_paid = true;
+        await this.orderRepository.save(order);
         return;
-      }
-      const cost = Number(order.gangmaster_cost) || 0;
-      if (cost < 0.01) {
-        throw new HttpException(
-          '当前订单无需支付工长费',
-          HttpStatus.BAD_REQUEST,
-        );
       }
       await this.confirmOrderGangmasterCostWxPay(orderId);
     } catch (error) {
@@ -3162,8 +3545,8 @@ export class OrderService {
     for (const o of orders) {
       if (seen.has(o.id)) continue;
       seen.add(o.id);
-      const fee = Number(o.total_service_fee) || 0;
-      if (fee >= 0.01 && !o.total_service_fee_is_paid) {
+      const state = this.getOrderFeeState(o, 'service_fee');
+      if (state.unpaidAmount >= 0.01) {
         throw new HttpException(
           '请先支付平台服务费',
           HttpStatus.BAD_REQUEST,
@@ -3180,12 +3563,15 @@ export class OrderService {
       | (typeof WX_PAY_CONFIG.payType)['ORDER_PLATFORM_SERVICE_FEE']
       | (typeof WX_PAY_CONFIG.payType)['ORDER_GANGMASTER_COST'];
     order_id: number;
+    fee_indexes?: number[];
   }): Promise<{
     orderId: number;
     totalAmount: number;
+    totalFeeAmount: number;
     description: string;
+    feeIndexes: number[];
   }> {
-    const { pay_type, order_id } = params;
+    const { pay_type, order_id, fee_indexes } = params;
     const order = await this.orderRepository.findOne({
       where: { id: order_id },
     });
@@ -3197,12 +3583,15 @@ export class OrderService {
     }
 
     if (pay_type === WX_PAY_CONFIG.payType.ORDER_PLATFORM_SERVICE_FEE) {
-      if (order.total_service_fee_is_paid) {
-        throw new HttpException('平台服务费已支付', HttpStatus.BAD_REQUEST);
-      }
-      const amount = new Decimal(order.total_service_fee || 0)
-        .toDecimalPlaces(2)
-        .toNumber();
+      const state = this.getOrderFeeState(order, 'service_fee');
+      const selectedIndexes = this.resolveFeeIndexesForPayment({
+        amountList: state.amountList,
+        paidList: state.paidList,
+        feeIndexes: fee_indexes,
+        emptyMessage: '当前订单无需支付平台服务费',
+        paidMessage: '平台服务费已支付',
+      });
+      const amount = this.sumFeeIndexes(state.amountList, selectedIndexes);
       if (amount < 0.01) {
         throw new HttpException(
           '当前订单无需支付平台服务费',
@@ -3212,7 +3601,9 @@ export class OrderService {
       return {
         orderId: order.id,
         totalAmount: amount,
+        totalFeeAmount: state.totalAmount,
         description: `订单${order.order_no || order_id}-平台服务费`,
+        feeIndexes: selectedIndexes,
       };
     }
 
@@ -3230,12 +3621,15 @@ export class OrderService {
           HttpStatus.BAD_REQUEST,
         );
       }
-      if (order.gangmaster_cost_is_paid) {
-        throw new HttpException('工长费已支付', HttpStatus.BAD_REQUEST);
-      }
-      const amount = new Decimal(order.gangmaster_cost ?? 0)
-        .toDecimalPlaces(2)
-        .toNumber();
+      const state = this.getOrderFeeState(order, 'gangmaster_cost');
+      const selectedIndexes = this.resolveFeeIndexesForPayment({
+        amountList: state.amountList,
+        paidList: state.paidList,
+        feeIndexes: fee_indexes,
+        emptyMessage: '当前订单无需支付工长费',
+        paidMessage: '工长费已支付',
+      });
+      const amount = this.sumFeeIndexes(state.amountList, selectedIndexes);
       if (amount < 0.01) {
         throw new HttpException(
           '当前订单无需支付工长费',
@@ -3245,7 +3639,9 @@ export class OrderService {
       return {
         orderId: order.id,
         totalAmount: amount,
+        totalFeeAmount: state.totalAmount,
         description: `订单${order.order_no || order_id}-工长费`,
+        feeIndexes: selectedIndexes,
       };
     }
 
@@ -3253,9 +3649,12 @@ export class OrderService {
   }
 
   /**
-   * 微信回调：订单平台服务费 → total_service_fee_is_paid（幂等）
+   * 微信回调：订单平台服务费 → total_service_fee_paid_list（幂等）
    */
-  async confirmOrderPlatformServiceFeeWxPay(orderId: number): Promise<null> {
+  async confirmOrderPlatformServiceFeeWxPay(
+    orderId: number,
+    feeIndexes?: number[],
+  ): Promise<number> {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
     });
@@ -3268,32 +3667,64 @@ export class OrderService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    if (order.total_service_fee_is_paid) {
-      return null;
+    const state = this.getOrderFeeState(order, 'service_fee');
+    const selectedIndexes =
+      feeIndexes?.length
+        ? [...new Set(feeIndexes.map((index) => Number(index)))].filter(
+            (index) =>
+              Number.isInteger(index) &&
+              index >= 0 &&
+              index < state.amountList.length,
+          )
+        : state.unpaidIndexes;
+    if (selectedIndexes.length === 0) {
+      return 0;
     }
-    const totalServiceFee = Number(order.total_service_fee) || 0;
-    if (totalServiceFee <= 0) {
-      return null;
+
+    const paymentAmount = this.sumFeeIndexes(state.amountList, selectedIndexes);
+    const newlyPaidIndexes = selectedIndexes.filter(
+      (index) =>
+        Number(state.amountList[index]) >= 0.01 &&
+        state.paidList[index] !== true,
+    );
+    for (const index of newlyPaidIndexes) {
+      state.paidList[index] = true;
     }
-    order.total_service_fee_is_paid = true;
+
+    order.total_service_fee_list = state.amountList;
+    order.total_service_fee_paid_list = state.paidList;
+    order.total_service_fee_is_paid = this.isMoneyListPaid(
+      state.amountList,
+      state.paidList,
+    );
     await this.orderRepository.save(order);
-    try {
-      await this.platformIncomeRecordService.create({
-        orderId: order.id,
-        order_no: order.order_no,
-        cost_type: CostType.SERVICE_FEE,
-        cost_amount: totalServiceFee,
-      });
-    } catch (e) {
-      console.error('[微信回调] 订单平台服务费收支记录失败:', e);
+
+    const newlyPaidAmount = this.sumFeeIndexes(
+      state.amountList,
+      newlyPaidIndexes,
+    );
+    if (newlyPaidAmount >= 0.01) {
+      try {
+        await this.platformIncomeRecordService.create({
+          orderId: order.id,
+          order_no: order.order_no,
+          cost_type: CostType.SERVICE_FEE,
+          cost_amount: newlyPaidAmount,
+        });
+      } catch (e) {
+        console.error('[微信回调] 订单平台服务费收支记录失败:', e);
+      }
     }
-    return null;
+    return paymentAmount;
   }
 
   /**
-   * 微信回调：工长费 → gangmaster_cost_is_paid（幂等）
+   * 微信回调：工长费 → gangmaster_cost_paid_list（幂等）
    */
-  async confirmOrderGangmasterCostWxPay(orderId: number): Promise<null> {
+  async confirmOrderGangmasterCostWxPay(
+    orderId: number,
+    feeIndexes?: number[],
+  ): Promise<number> {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
     });
@@ -3306,16 +3737,35 @@ export class OrderService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    if (order.gangmaster_cost_is_paid) {
-      return null;
+    const state = this.getOrderFeeState(order, 'gangmaster_cost');
+    const selectedIndexes =
+      feeIndexes?.length
+        ? [...new Set(feeIndexes.map((index) => Number(index)))].filter(
+            (index) =>
+              Number.isInteger(index) &&
+              index >= 0 &&
+              index < state.amountList.length,
+          )
+        : state.unpaidIndexes;
+    if (selectedIndexes.length === 0) {
+      return 0;
     }
-    const cost = Number(order.gangmaster_cost) || 0;
-    if (cost <= 0) {
-      return null;
+
+    const paymentAmount = this.sumFeeIndexes(state.amountList, selectedIndexes);
+    for (const index of selectedIndexes) {
+      if (Number(state.amountList[index]) >= 0.01) {
+        state.paidList[index] = true;
+      }
     }
-    order.gangmaster_cost_is_paid = true;
+
+    order.gangmaster_cost_list = state.amountList;
+    order.gangmaster_cost_paid_list = state.paidList;
+    order.gangmaster_cost_is_paid = this.isMoneyListPaid(
+      state.amountList,
+      state.paidList,
+    );
     await this.orderRepository.save(order);
-    return null;
+    return paymentAmount;
   }
 
   /**
@@ -3976,58 +4426,11 @@ export class OrderService {
       );
     }
 
-    // 4. 判断是否是分配订单，如果是，需要更新父订单的工价项状态
-    let targetWorkPriceItem = workPriceItem;
-    let parentOrder = order;
+    // 4. 当前支付/验收都以 work_price_item.id 为准，不再按父/子单副本联动
+    const targetWorkPriceItem = workPriceItem;
+    const parentOrder = order;
 
-    // 如果工价项的 order_id 是分配订单的ID，或者订单本身是分配订单，都需要找到父订单中对应的工价项
-    if ((order.parent_order_id && order.craftsman_user_id) || 
-        (workPriceItem.order_id !== order.id && order.parent_order_id)) {
-      // 分配订单：找到父订单中对应的工价项
-      // 优先使用工价项的 order_id 来判断是否是分配订单的工价项
-      const actualOrderId = workPriceItem.order_id;
-      const isAssignedOrderItem = actualOrderId !== order.id && order.parent_order_id;
-      
-      let searchOrderId = order.parent_order_id;
-      let searchCraftsmanId = order.craftsman_user_id;
-      
-      // 如果工价项的 order_id 就是父订单ID，说明这是父订单的工价项，直接使用
-      if (actualOrderId === order.parent_order_id) {
-        targetWorkPriceItem = workPriceItem;
-        parentOrder = await this.orderRepository.findOne({
-          where: { id: order.parent_order_id },
-        });
-        if (!parentOrder) {
-          throw new HttpException('父订单不存在', HttpStatus.NOT_FOUND);
-        }
-        console.log(`订单 ${order.id} 是分配订单，工价项 ${workPriceItem.id} 属于父订单 ${order.parent_order_id}，直接使用`);
-      } else {
-        // 否则，查找父订单中对应的工价项
-        const parentWorkPriceItem = await this.workPriceItemRepository.findOne({
-          where: {
-            order_id: searchOrderId,
-            work_price_id: workPriceItem.work_price_id,
-            assigned_craftsman_id: searchCraftsmanId,
-          },
-        });
-
-        if (parentWorkPriceItem) {
-          // 使用父订单的工价项进行验收
-          targetWorkPriceItem = parentWorkPriceItem;
-          parentOrder = await this.orderRepository.findOne({
-            where: { id: searchOrderId },
-          });
-          if (!parentOrder) {
-            throw new HttpException('父订单不存在', HttpStatus.NOT_FOUND);
-          }
-          console.log(`订单 ${order.id} 是分配订单，将更新父订单 ${searchOrderId} 的工价项 ${parentWorkPriceItem.id}`);
-        } else {
-          console.warn(`订单 ${order.id} 是分配订单，但未找到父订单 ${searchOrderId} 中对应的工价项（work_price_id: ${workPriceItem.work_price_id}, assigned_craftsman_id: ${searchCraftsmanId}），使用当前工价项`);
-        }
-      }
-    }
-
-    // 5. 检查父订单工价项是否已验收
+    // 5. 检查当前工价项是否已验收
     if (targetWorkPriceItem.is_accepted === true) {
       throw new HttpException(
         '工价项已验收，无法重复验收',
@@ -4035,7 +4438,7 @@ export class OrderService {
       );
     }
 
-    // 6. 检查父订单工价项是否已支付
+    // 6. 检查当前工价项是否已支付
     if (targetWorkPriceItem.is_paid !== true) {
       throw new HttpException(
         '工价项尚未支付，无法验收',
@@ -4047,10 +4450,10 @@ export class OrderService {
     const isGangmasterOrder = parentOrder.order_type === 'gangmaster';
     const isCraftsmanOrder = parentOrder.order_type === 'craftsman';
 
-    // 8. 获取分配的工匠ID
-    // 如果是工匠订单，且没有分配工匠，则使用订单的接单工匠（craftsman_user_id）
-    // 如果是工长订单，必须有分配的工匠（assigned_craftsman_id）
-    let assignedCraftsmanId = targetWorkPriceItem.assigned_craftsman_id;
+    // 8. 获取实际收款工匠ID
+    let assignedCraftsmanId =
+      targetWorkPriceItem.assigned_craftsman_id ||
+      targetWorkPriceItem.craftsman_user_id;
     
     if (!assignedCraftsmanId) {
       if (isCraftsmanOrder) {
@@ -4073,13 +4476,11 @@ export class OrderService {
 
 
     return {
-      workPriceItem,
       order,
       targetWorkPriceItem,
       parentOrder,
       assignedCraftsmanId,
       isGangmasterOrder,
-      isCraftsmanOrder,
     };
   }
 
@@ -4087,19 +4488,17 @@ export class OrderService {
     ctx: AcceptSingleWorkPriceContext,
   ): Promise<null> {
     const {
-      workPriceItem,
       order,
       targetWorkPriceItem,
       parentOrder,
       assignedCraftsmanId,
       isGangmasterOrder,
-      isCraftsmanOrder,
     } = ctx;
 
     // 7. 计算结算金额
     const settlementAmount = targetWorkPriceItem.calculateSettlementAmount();
 
-    // 8. 标记父订单工价项为已验收
+    // 8. 标记当前工价项为已验收
     console.log(`订单 ${parentOrder.id} 验收：更新工价项 ${targetWorkPriceItem.id} 的 is_accepted 为 true (当前值: ${targetWorkPriceItem.is_accepted})`);
     targetWorkPriceItem.is_accepted = true;
     const savedItem = await this.workPriceItemRepository.save(targetWorkPriceItem);
@@ -4115,41 +4514,6 @@ export class OrderService {
         `工价项 ${targetWorkPriceItem.id} 验收状态更新失败`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
-    }
-
-    // 9. 如果验收的是父订单的工价项，需要同步更新所有分配给该工匠的工价项副本状态
-    if (isGangmasterOrder && targetWorkPriceItem.assigned_craftsman_id) {
-      // 查询分配订单中对应的工价项副本并更新
-      const assignedOrders = await this.orderRepository.find({
-        where: {
-          parent_order_id: parentOrder.id,
-          craftsman_user_id: targetWorkPriceItem.assigned_craftsman_id,
-          is_assigned: true,
-        },
-      });
-
-      for (const assignedOrder of assignedOrders) {
-        // 查询分配订单中对应的工价项副本（通过相同的work_price_id）
-        const assignedWorkItems = await this.workPriceItemRepository.find({
-          where: {
-            order_id: assignedOrder.id,
-            work_price_id: targetWorkPriceItem.work_price_id,
-          },
-        });
-
-        for (const assignedWorkItem of assignedWorkItems) {
-          if (assignedWorkItem.is_accepted !== true) {
-            assignedWorkItem.is_accepted = true;
-            await this.workPriceItemRepository.save(assignedWorkItem);
-            console.log(`工长订单 ${parentOrder.id}：同步更新分配订单 ${assignedOrder.id} 的工价项 ${assignedWorkItem.id} 验收状态`);
-          }
-        }
-      }
-    } else if (order.parent_order_id && order.craftsman_user_id && workPriceItem.id !== targetWorkPriceItem.id) {
-      // 如果是验收分配订单自己的工价项
-      workPriceItem.is_accepted = true;
-      await this.workPriceItemRepository.save(workPriceItem);
-      console.log(`订单 ${order.id} 验收：同步更新分配订单的工价项 ${workPriceItem.id} 状态`);
     }
 
     // 10. 打款给分配的工匠（验收时不冻结，全部打入余额）
@@ -4448,7 +4812,7 @@ export class OrderService {
   }
 
   /**
-   * 将传入的工价项 ID 全部置为已验收：先对每条做与单条验收相同的前置校验，全部通过后再逐条执行 acceptSingleWorkPrice（打款、同步副本、订单完成等）
+   * 将传入的工价项 ID 全部置为已验收：先逐条做与单条验收相同的前置校验，全部通过后再逐条执行。
    */
   async batchAcceptWorkPriceItemsByIds(
     workPriceItemIds: number[],
@@ -4510,4 +4874,3 @@ export class OrderService {
   }
 
 }
-

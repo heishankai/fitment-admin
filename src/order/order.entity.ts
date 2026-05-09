@@ -114,6 +114,18 @@ export class Order {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   total_service_fee: number; // 平台服务费
 
+  @Column({
+    type: 'json',
+    nullable: true,
+  })
+  total_service_fee_list?: number[]; // 平台服务费明细，每次提交工价追加一次
+
+  @Column({
+    type: 'json',
+    nullable: true,
+  })
+  total_service_fee_paid_list?: boolean[]; // 平台服务费明细支付状态，与 total_service_fee_list 下标一一对应
+
   @Column({ type: 'boolean', default: false })
   total_service_fee_is_paid: boolean; // 平台服务费是否已支付
 
@@ -122,6 +134,18 @@ export class Order {
 
   @Column({ type: 'int', nullable: true })
   gangmaster_cost: number; // 工长工费
+
+  @Column({
+    type: 'json',
+    nullable: true,
+  })
+  gangmaster_cost_list?: number[]; // 工长费用明细，每次提交工价追加一次
+
+  @Column({
+    type: 'json',
+    nullable: true,
+  })
+  gangmaster_cost_paid_list?: boolean[]; // 工长费用明细支付状态，与 gangmaster_cost_list 下标一一对应
 
   @Column({ type: 'boolean', default: false })
   gangmaster_cost_is_paid: boolean; // 工长费用是否已支付

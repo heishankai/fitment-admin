@@ -83,6 +83,20 @@ export class WorkPriceItem {
   @JoinColumn({ name: 'assigned_craftsman_id' })
   assigned_craftsman: CraftsmanUser; // 当前执行工匠信息
 
+  @Column({ nullable: true })
+  gangmaster_user_id: number; // 工长用户ID（工长订单生成的工价快照）
+
+  @ManyToOne(() => CraftsmanUser, { nullable: true })
+  @JoinColumn({ name: 'gangmaster_user_id' })
+  gangmaster_user: CraftsmanUser; // 工长用户信息
+
+  @Column({ nullable: true })
+  craftsman_user_id: number; // 工匠用户ID（工匠订单或已分配工价）
+
+  @ManyToOne(() => CraftsmanUser, { nullable: true })
+  @JoinColumn({ name: 'craftsman_user_id' })
+  craftsman_user: CraftsmanUser; // 工匠用户信息
+
   @Column({
     type: 'decimal',
     precision: 10,

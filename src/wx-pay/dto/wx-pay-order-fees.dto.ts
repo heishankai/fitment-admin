@@ -1,4 +1,12 @@
-import { IsNotEmpty, IsNumber, IsIn, Min } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsIn,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { WX_PAY_CONFIG } from '../../common/constants/app.constants';
 
@@ -21,6 +29,20 @@ export class WxPayOrderFeesDto {
   @Type(() => Number)
   @IsNumber()
   order_id: number;
+
+  /** 可选：指定支付金额明细下标；不传则支付当前所有未付明细 */
+  @IsOptional()
+  @IsArray({ message: 'fee_indexes 必须是数组' })
+  @ArrayMinSize(1, { message: 'fee_indexes 至少包含一个下标' })
+  @Type(() => Number)
+  @IsNumber({}, { each: true, message: 'fee_indexes 必须是数字数组' })
+  fee_indexes?: number[];
+
+  /** 兼容旧前端：单个明细下标 */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: 'fee_index 必须是数字' })
+  fee_index?: number;
 
   @IsNotEmpty({ message: '支付金额不能为空' })
   @Type(() => Number)

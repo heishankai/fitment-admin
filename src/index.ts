@@ -35,6 +35,7 @@ export { IndependentPageConfigModule } from './independent-page-config/independe
 export { ConstructionProgressModule } from './construction-progress/construction-progress.module';
 export { MaterialsModule } from './materials/materials.module';
 export { PlatformIncomeRecordModule } from './platform-income-record/platform-income-record.module';
+export { PaymentRecordModule } from './payment-record/payment-record.module';
 export { WorkPriceItemModule } from './work-price-item/work-price-item.module';
 export { GetPriceModule } from './get-price/get-price.module';
 export { WelcomeModule } from './welcome/welcome.module';

@@ -80,11 +80,32 @@ export class UploadController {
       if (error instanceof HttpException) {
         throw error;
       }
+      if (this.isFileSizeLimitError(error)) {
+        throw new HttpException(
+          this.getFileSizeLimitMessage(),
+          HttpStatus.PAYLOAD_TOO_LARGE,
+        );
+      }
       throw new HttpException(
         error.message || '文件上传失败',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  private getFileSizeLimitMessage() {
+    return `文件大小不能超过 ${UPLOAD_CONFIG.maxFileSize / 1024 / 1024}MB`;
+  }
+
+  private isFileSizeLimitError(error: any) {
+    const message = String(error?.message || '').toLowerCase();
+    return (
+      error?.statusCode === HttpStatus.PAYLOAD_TOO_LARGE ||
+      error?.code === 'FST_REQ_FILE_TOO_LARGE' ||
+      error?.name === 'RequestFileTooLargeError' ||
+      message.includes('file too large') ||
+      message.includes('request file too large')
+    );
   }
 
   /**

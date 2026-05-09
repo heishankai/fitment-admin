@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import Decimal from 'decimal.js';
 import { Materials } from './materials.entity';
+import { WorkPriceItem } from '../work-price-item/work-price-item.entity';
 import { CreateMaterialsDto } from './dto/create-materials.dto';
 import { AcceptMaterialsDto } from './dto/accept-materials.dto';
 import { MaterialsResponseDto, CommodityItemResponse } from './dto/materials-response.dto';
@@ -28,10 +29,52 @@ export class MaterialsService {
     private readonly materialsRepository: Repository<Materials>,
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
+    @InjectRepository(WorkPriceItem)
+    private readonly workPriceItemRepository: Repository<WorkPriceItem>,
     private readonly platformIncomeRecordService: PlatformIncomeRecordService,
     @Inject(forwardRef(() => OrderService))
     private readonly orderService: OrderService,
   ) {}
+
+  private async resolveWorkKindForOrder(
+    order: Order,
+    requestedWorkKindCode?: string,
+    requestedWorkKindName?: string,
+  ): Promise<{ work_kind_code: string | null; work_kind_name: string | null }> {
+    if (requestedWorkKindCode || requestedWorkKindName) {
+      return {
+        work_kind_code: requestedWorkKindCode || null,
+        work_kind_name: requestedWorkKindName || null,
+      };
+    }
+
+    const workItems = await this.workPriceItemRepository.find({
+      where: { order_id: order.id },
+      select: ['work_kind_code', 'work_kind_name'],
+    });
+    const uniqueCodes = [
+      ...new Set(
+        workItems
+          .map((item) => item.work_kind_code)
+          .filter((code) => !!code),
+      ),
+    ];
+
+    if (uniqueCodes.length === 1) {
+      const matched = workItems.find(
+        (item) => item.work_kind_code === uniqueCodes[0],
+      );
+      return {
+        work_kind_code: matched?.work_kind_code || null,
+        work_kind_name: matched?.work_kind_name || null,
+      };
+    }
+
+    return {
+      work_kind_code: order.work_kind_code || null,
+      work_kind_name: order.work_kind_name || null,
+    };
+  }
 
   /**
    * 根据订单ID查询辅材列表
@@ -66,6 +109,9 @@ export class MaterialsService {
           quantity: material.quantity,
           commodity_cover: material.commodity_cover || [],
           settlement_amount: Number(material.settlement_amount),
+          work_kind_name: material.work_kind_name || undefined,
+          work_kind_code: material.work_kind_code || undefined,
+          craftsman_user_id: material.craftsman_user_id || undefined,
           is_paid: material.is_paid,
           is_accepted: material.is_accepted,
           createdAt: material.createdAt,
@@ -235,6 +281,12 @@ export class MaterialsService {
         );
       }
 
+      const resolvedWorkKind = await this.resolveWorkKindForOrder(
+        order,
+        createDto.work_kind_code,
+        createDto.work_kind_name,
+      );
+
       // 4. 批量创建辅材记录
       const materialsList = createDto.commodity_list.map((item) => {
         const commodityPrice = parseFloat(item.commodity_price);
@@ -243,6 +295,9 @@ export class MaterialsService {
 
         return this.materialsRepository.create({
           orderId: createDto.orderId,
+          work_kind_code: resolvedWorkKind.work_kind_code,
+          work_kind_name: resolvedWorkKind.work_kind_name,
+          craftsman_user_id: craftsmanUserId,
           is_paid: false, // 默认未付款
           is_accepted: false, // 默认未验收
           commodity_id: item.commodity_id || item.id, // 兼容 id 字段

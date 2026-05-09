@@ -21,6 +21,15 @@ export class Materials {
   @JoinColumn({ name: 'orderId' })
   order: Order; // 订单信息
 
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  work_kind_name: string; // 所属工种名称
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  work_kind_code: string; // 所属工种编码
+
+  @Column({ nullable: true })
+  craftsman_user_id: number; // 添加辅材的工匠ID
+
   @Column({ type: 'boolean', default: false })
   is_paid: boolean; // 用户是否已付款
 

@@ -14,6 +14,14 @@ export class CreateConstructionProgressDto {
   @IsNumber()
   orderId: number; // 订单ID
 
+  @IsOptional()
+  @IsString()
+  work_kind_name?: string; // 所属工种名称
+
+  @IsOptional()
+  @IsString()
+  work_kind_code?: string; // 所属工种编码
+
   @IsNotEmpty({ message: '上班打卡时间不能为空' })
   @IsString()
   start_time: string; // 上班打卡时间

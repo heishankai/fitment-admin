@@ -51,6 +51,14 @@ export class CreateMaterialsDto {
   @IsNumber()
   orderId: number; // 订单ID
 
+  @IsOptional()
+  @IsString()
+  work_kind_name?: string; // 所属工种名称
+
+  @IsOptional()
+  @IsString()
+  work_kind_code?: string; // 所属工种编码
+
   @IsNotEmpty({ message: '商品列表不能为空' })
   @IsArray({ message: '商品列表必须是数组' })
   @ValidateNested({ each: true })

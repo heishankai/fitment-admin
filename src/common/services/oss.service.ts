@@ -37,7 +37,7 @@ export class OssService {
       if (file.size > UPLOAD_CONFIG.maxFileSize) {
         throw new HttpException(
           `文件大小不能超过 ${UPLOAD_CONFIG.maxFileSize / 1024 / 1024}MB`,
-          HttpStatus.BAD_REQUEST,
+          HttpStatus.PAYLOAD_TOO_LARGE,
         );
       }
 

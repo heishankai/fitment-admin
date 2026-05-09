@@ -11,6 +11,7 @@ import { MaterialsService } from '../materials/materials.service';
 import { WorkPriceItemService } from '../work-price-item/work-price-item.service';
 import { OrderService } from '../order/order.service';
 import { dispatchWxPayCallback } from './wx-pay-callback.handler';
+import { PaymentRecordService } from '../payment-record/payment-record.service';
 
 @Injectable()
 export class WxPayService {
@@ -21,6 +22,7 @@ export class WxPayService {
     private readonly workPriceItemService: WorkPriceItemService,
     @Inject(forwardRef(() => OrderService))
     private readonly orderService: OrderService,
+    private readonly paymentRecordService: PaymentRecordService,
   ) {}
 
   /**
@@ -201,15 +203,27 @@ export class WxPayService {
    */
   async orderFeesPrepay(dto: WxPayOrderFeesDto, openid: string): Promise<any> {
     try {
-      const { orderId, totalAmount, description } =
+      const feeIndexes =
+        dto.fee_indexes ||
+        (dto as any).feeIndexes ||
+        (dto.fee_index != null ? [dto.fee_index] : undefined);
+      const {
+        orderId,
+        totalAmount,
+        totalFeeAmount,
+        description,
+        feeIndexes: resolvedFeeIndexes,
+      } =
         await this.orderService.getOrderFeeWxPayPreview({
           pay_type: dto.pay_type,
           order_id: dto.order_id,
+          fee_indexes: feeIndexes,
         });
 
       const frontend = new Decimal(dto.order_amount).toDecimalPlaces(2);
       const backend = new Decimal(totalAmount).toDecimalPlaces(2);
-      if (!frontend.equals(backend)) {
+      const legacyTotal = new Decimal(totalFeeAmount).toDecimalPlaces(2);
+      if (!frontend.equals(backend) && !frontend.equals(legacyTotal)) {
         throw new BadRequestException(
           `支付金额不一致：传入${dto.order_amount}元，应付${totalAmount}元`,
         );
@@ -223,6 +237,8 @@ export class WxPayService {
       const attach = JSON.stringify({
         type: dto.pay_type,
         orderId,
+        feeIndexes: resolvedFeeIndexes,
+        orderAmount: totalAmount,
       });
 
       const data = await callWxPay({
@@ -265,11 +281,25 @@ export class WxPayService {
               ? JSON.stringify(rawAttach)
               : '';
 
-        await dispatchWxPayCallback(attachForDispatch, {
-          materialsService: this.materialsService,
-          workPriceItemService: this.workPriceItemService,
-          orderService: this.orderService,
-        });
+        const paidAmount =
+          decryptedData?.amount?.total != null
+            ? new Decimal(decryptedData.amount.total).div(100).toNumber()
+            : undefined;
+
+        await dispatchWxPayCallback(
+          attachForDispatch,
+          {
+            materialsService: this.materialsService,
+            workPriceItemService: this.workPriceItemService,
+            orderService: this.orderService,
+            paymentRecordService: this.paymentRecordService,
+          },
+          {
+            out_trade_no: decryptedData?.out_trade_no,
+            transaction_id: decryptedData?.transaction_id,
+            amount: paidAmount,
+          },
+        );
       } else if (event_type) {
         console.warn(
           '[微信支付回调] 忽略非支付成功事件 event_type=',

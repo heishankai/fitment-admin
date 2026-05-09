@@ -22,6 +22,46 @@ export class ConstructionProgressService {
     private readonly workPriceItemRepository: Repository<WorkPriceItem>,
   ) {}
 
+  private async resolveWorkKindForOrder(
+    order: Order,
+    requestedWorkKindCode?: string,
+    requestedWorkKindName?: string,
+  ): Promise<{ work_kind_code: string | null; work_kind_name: string | null }> {
+    if (requestedWorkKindCode || requestedWorkKindName) {
+      return {
+        work_kind_code: requestedWorkKindCode || null,
+        work_kind_name: requestedWorkKindName || null,
+      };
+    }
+
+    const workItems = await this.workPriceItemRepository.find({
+      where: { order_id: order.id },
+      select: ['work_kind_code', 'work_kind_name'],
+    });
+    const uniqueCodes = [
+      ...new Set(
+        workItems
+          .map((item) => item.work_kind_code)
+          .filter((code) => !!code),
+      ),
+    ];
+
+    if (uniqueCodes.length === 1) {
+      const matched = workItems.find(
+        (item) => item.work_kind_code === uniqueCodes[0],
+      );
+      return {
+        work_kind_code: matched?.work_kind_code || null,
+        work_kind_name: matched?.work_kind_name || null,
+      };
+    }
+
+    return {
+      work_kind_code: order.work_kind_code || null,
+      work_kind_name: order.work_kind_name || null,
+    };
+  }
+
   /**
    * 根据订单ID查询施工进度列表
    * @param orderId 订单ID
@@ -103,9 +143,18 @@ export class ConstructionProgressService {
         );
       }
 
+      const resolvedWorkKind = await this.resolveWorkKindForOrder(
+        order,
+        createDto.work_kind_code,
+        createDto.work_kind_name,
+      );
+
       // 4. 创建施工进度记录
       const constructionProgress = this.constructionProgressRepository.create({
         orderId: createDto.orderId,
+        work_kind_code: resolvedWorkKind.work_kind_code,
+        work_kind_name: resolvedWorkKind.work_kind_name,
+        craftsman_user_id: craftsmanUserId,
         start_time: createDto.start_time,
         end_time: createDto.end_time,
         location: createDto.location,
@@ -183,11 +232,18 @@ export class ConstructionProgressService {
       }
       // 如果工价项已经在工匠订单中（order.parent_order_id 不为 null），直接使用当前订单ID
 
-      // 4. 查询该订单的所有施工进度
-      return await this.constructionProgressRepository.find({
+      // 4. 查询该订单的施工进度；新数据按工种过滤，旧数据没有工种则继续兼容返回
+      const progressList = await this.constructionProgressRepository.find({
         where: { orderId: targetOrderId },
         order: { createdAt: 'DESC' },
       });
+      return workPriceItem.work_kind_code
+        ? progressList.filter(
+            (item) =>
+              !item.work_kind_code ||
+              item.work_kind_code === workPriceItem.work_kind_code,
+          )
+        : progressList;
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
