@@ -9,6 +9,13 @@ import { UpdateIsSkillVerifiedDto } from './dto/update-is-skill-verified.dto';
 import { QueryIsSkillVerifiedDto } from './dto/query-is-skill-verified.dto';
 import { SystemNotificationService } from '../system-notification/system-notification.service';
 
+type SkillVerificationRelationItem = IsSkillVerified & {
+  isSkillVerified: boolean;
+  nickname: string;
+  phone: string;
+  avatar: string;
+};
+
 @Injectable()
 export class IsSkillVerifiedService {
   constructor(
@@ -39,6 +46,62 @@ export class IsSkillVerifiedService {
       }
     }
     return n;
+  }
+
+  private async withCraftsmanUserInfo(
+    records: IsSkillVerified[],
+  ): Promise<SkillVerificationRelationItem[]> {
+    if (records.length === 0) {
+      return [];
+    }
+
+    const userIds = [
+      ...new Set(records.map((item) => item.userId).filter(Boolean)),
+    ];
+
+    if (userIds.length === 0) {
+      return records.map((item) => ({
+        ...item,
+        isSkillVerified: false,
+        nickname: '',
+        phone: '',
+        avatar: '',
+      }));
+    }
+
+    const users = await this.craftsmanUserRepository.find({
+      where: userIds.map((id) => ({ id })),
+      select: ['id', 'isSkillVerified', 'nickname', 'phone', 'avatar'],
+    });
+
+    const userInfoMap = new Map(
+      users.map((user) => [
+        user.id,
+        {
+          isSkillVerified: user.isSkillVerified || false,
+          nickname: user.nickname || '',
+          phone: user.phone || '',
+          avatar: user.avatar || '',
+        },
+      ]),
+    );
+
+    return records.map((item) => {
+      const userInfo = userInfoMap.get(item.userId) || {
+        isSkillVerified: false,
+        nickname: '',
+        phone: '',
+        avatar: '',
+      };
+
+      return {
+        ...item,
+        isSkillVerified: userInfo.isSkillVerified,
+        nickname: userInfo.nickname,
+        phone: userInfo.phone,
+        avatar: userInfo.avatar,
+      };
+    });
   }
 
   /**
@@ -73,13 +136,13 @@ export class IsSkillVerifiedService {
           // 手机号使用精确匹配
           whereConditions.phone = phone.trim();
         }
-        
+
         const matchedUsers = await this.craftsmanUserRepository.find({
           where: whereConditions,
           select: ['id'],
         });
         filteredUserIds = matchedUsers.map((user) => user.id);
-        
+
         // 如果没有匹配的用户，直接返回空结果
         if (filteredUserIds.length === 0) {
           return {
@@ -298,13 +361,55 @@ export class IsSkillVerifiedService {
   }
 
   /**
+   * 根据技能认证ID查询从属关系：
+   * - 工长：返回该工长下的所有工匠
+   * - 非工长：返回当前工匠所属的工长
+   * @param id 技能认证ID
+   * @returns 从属关系数组
+   */
+  async findRelationsById(
+    id: number,
+  ): Promise<SkillVerificationRelationItem[]> {
+    const current = await this.isSkillVerifiedRepository.findOne({
+      where: { id },
+    });
+
+    if (!current) {
+      throw new BadRequestException('技能认证记录不存在');
+    }
+
+    if (current.work_kind_code?.trim() === 'GONGZHANG') {
+      const craftsmen = await this.isSkillVerifiedRepository.find({
+        where: { relatedCraftsmanUserId: current.userId },
+        order: { createdAt: 'DESC' },
+      });
+
+      return await this.withCraftsmanUserInfo(
+        craftsmen.filter((item) => item.userId !== current.userId),
+      );
+    }
+
+    if (current.relatedCraftsmanUserId == null) {
+      return [];
+    }
+
+    const foreman = await this.isSkillVerifiedRepository.findOne({
+      where: { userId: current.relatedCraftsmanUserId },
+    });
+
+    if (foreman?.work_kind_code?.trim() !== 'GONGZHANG') {
+      return [];
+    }
+
+    return await this.withCraftsmanUserInfo([foreman]);
+  }
+
+  /**
    * 根据用户ID获取技能认证记录（含认证状态；若有 relatedCraftsmanUserId 则附带关联工匠昵称与手机号）
    * @param userId 用户ID
    * @returns 技能认证记录（含 isSkillVerified、relatedCraftsmanNickname、relatedCraftsmanPhone）
    */
-  async findByUserIdWithVerified(
-    userId: number,
-  ): Promise<
+  async findByUserIdWithVerified(userId: number): Promise<
     | (IsSkillVerified & {
         isSkillVerified: boolean;
         relatedCraftsmanNickname: string | null;
@@ -403,7 +508,10 @@ export class IsSkillVerifiedService {
       }
 
       // 更新记录
-      await this.isSkillVerifiedRepository.update(isSkillVerified.id, updateDto);
+      await this.isSkillVerifiedRepository.update(
+        isSkillVerified.id,
+        updateDto,
+      );
 
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
       return null;
@@ -458,8 +566,7 @@ export class IsSkillVerifiedService {
         namesForStrip,
       ).trim();
       if (!baseNickname) {
-        baseNickname =
-          (user.nickname || '').trim() || '智惠装师傅';
+        baseNickname = (user.nickname || '').trim() || '智惠装师傅';
       }
 
       const newNickname = `${workKindName}-${baseNickname}`;
@@ -499,10 +606,7 @@ export class IsSkillVerifiedService {
    * @param reason 拒绝原因（可选）
    * @returns null，由全局拦截器包装成标准响应
    */
-  async rejectVerification(
-    userId: number,
-    reason?: string,
-  ): Promise<null> {
+  async rejectVerification(userId: number, reason?: string): Promise<null> {
     try {
       // 检查用户是否存在
       const user = await this.craftsmanUserRepository.findOne({
@@ -547,4 +651,3 @@ export class IsSkillVerifiedService {
     }
   }
 }
-

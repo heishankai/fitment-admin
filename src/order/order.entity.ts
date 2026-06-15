@@ -135,6 +135,12 @@ export class Order {
   @Column({ type: 'int', nullable: true })
   gangmaster_cost: number; // 工长工费
 
+  @Column({ type: 'varchar', length: 20, default: 'auto' })
+  gangmaster_cost_source: string; // 工长费来源：auto 自动计算，manual 手动填写
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  manual_gangmaster_cost: number | null; // 最近一次手动填写的本次工长费
+
   @Column({
     type: 'json',
     nullable: true,

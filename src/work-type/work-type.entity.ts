@@ -65,6 +65,10 @@ export class WorkType {
   @Column({ type: 'varchar', length: 50, nullable: true })
   minimum_price?: string | number;
 
+  // 排序值，越大越靠前
+  @Column({ type: 'int', default: 0 })
+  sort: number;
+
   // 创建时间
   @CreateDateColumn()
   createdAt: Date;

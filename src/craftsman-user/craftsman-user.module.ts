@@ -12,8 +12,6 @@ import { CraftsmanUserController } from './craftsman-user.controller';
 import { CraftsmanUserService } from './craftsman-user.service';
 // constants
 import { JWT_CONFIG } from '../common/constants/app.constants';
-// modules
-import { SmsModule } from '../sms/sms.module';
 
 @Module({
   imports: [
@@ -22,11 +20,9 @@ import { SmsModule } from '../sms/sms.module';
       secret: JWT_CONFIG.secret,
       signOptions: { expiresIn: JWT_CONFIG.expiresIn },
     }),
-    SmsModule, // 导入短信模块以使用验证码验证功能
   ],
   controllers: [CraftsmanUserController],
   providers: [CraftsmanUserService],
   exports: [CraftsmanUserService],
 })
 export class CraftsmanUserModule {}
-

@@ -14,13 +14,16 @@ export class CraftsmanUser {
   @Column({ unique: true })
   phone: string;
 
+  @Column({ unique: true, nullable: true })
+  openid: string;
+
   @Column({ nullable: true, default: '智惠装师傅' })
   nickname: string;
 
   @Column({
     nullable: true,
     default:
-      'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',
+      'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1780231126950_qyilqt_XXJCYNCHV6BF35a2091a33e4132c7c92a6ae41053a4c.png',
   })
   avatar: string;
 

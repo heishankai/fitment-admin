@@ -4,7 +4,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ConstructionProgress } from './construction-progress.entity';
 import { CreateConstructionProgressDto } from './dto/create-construction-progress.dto';
 import { Order } from '../order/order.entity';
@@ -78,9 +78,18 @@ export class ConstructionProgressService {
         throw new HttpException('订单不存在', HttpStatus.NOT_FOUND);
       }
 
-      // 查询该订单的所有施工进度
+      const targetOrderIds = [orderId];
+      if (order.parent_order_id === null || order.parent_order_id === undefined) {
+        const childOrders = await this.orderRepository.find({
+          where: { parent_order_id: orderId },
+          select: ['id'],
+        });
+        targetOrderIds.push(...childOrders.map((item) => item.id));
+      }
+
+      // 查询该订单及其工匠子单的所有施工进度，便于工长单按工种合并展示
       return await this.constructionProgressRepository.find({
-        where: { orderId },
+        where: { orderId: In(targetOrderIds) },
         order: { createdAt: 'DESC' },
       });
     } catch (error) {

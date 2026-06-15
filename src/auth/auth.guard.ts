@@ -62,10 +62,11 @@ export class AuthGuard implements CanActivate {
       } else if (payload.type === 'craftsman') {
         // 工匠用户token格式
         request['user'] = {
-          username: `craftsman_${payload.phone}`,
+          username: `craftsman_${payload.openid || payload.phone}`,
           userid: payload.userId,
           userId: payload.userId,
           phone: payload.phone,
+          openid: payload.openid,
           type: 'craftsman',
         };
       } else {

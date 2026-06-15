@@ -36,6 +36,10 @@ export class HomePageAudit {
   @Column({ type: 'json' })
   publish_images: string[];
 
+  // 工地视频（最多一个，非必填）
+  @Column({ type: 'json', nullable: true })
+  publish_video: string[];
+
   // 审核状态：1-已发布 2-审核中 3-审核失败
   @Column({ type: 'int', default: 2 })
   status: number;

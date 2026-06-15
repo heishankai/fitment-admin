@@ -45,6 +45,9 @@ export class CommodityConfig {
     image: string[];
   }[]; // 商品详情
 
+  @Column({ type: 'int', default: 0 })
+  sort: number; // 排序值，越大越靠前
+
   @CreateDateColumn()
   createdAt: Date;
 

@@ -30,7 +30,7 @@ export class QueryCraftsmanUserDto {
   nickname?: string;
 
   /**
-   * 手机号（模糊匹配）
+   * 手机号（精准匹配）
    */
   @IsOptional()
   @IsString({ message: '手机号必须是字符串' })
@@ -44,4 +44,3 @@ export class QueryCraftsmanUserDto {
   @IsString({ message: '工种编码必须是字符串' })
   work_kind_code?: string;
 }
-

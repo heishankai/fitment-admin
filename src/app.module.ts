@@ -34,6 +34,7 @@ import {
   PlatformNoticeModule,
   SystemNotificationModule,
   AdminNotificationModule,
+  CustomerServiceConfigModule,
   GeolocationModule,
   OrderModule,
   WalletModule,
@@ -102,6 +103,7 @@ import { WstModule } from './wst/wst.module';
     PlatformNoticeModule, // 平台公告模块
     SystemNotificationModule, // 系统通知模块
     AdminNotificationModule, // 管理员通知模块
+    CustomerServiceConfigModule, // 客服头像与欢迎语配置
     OrderModule, // 订单模块
     WalletModule, // 钱包模块
     CraftsmanBankCardModule, // 工匠银行卡模块

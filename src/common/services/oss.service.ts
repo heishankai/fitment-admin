@@ -54,8 +54,12 @@ export class OssService {
       const fileName = `${timestamp}_${randomStr}_${originalName}${fileExtension}`;
       const objectName = `${folder}/${fileName}`;
 
-      // 上传到OSS
-      const result = await this.client.put(objectName, file.buffer);
+      // 上传到OSS。视频在小程序端播放依赖正确的 Content-Type，否则可能出现黑屏或无法解码。
+      const result = await this.client.put(objectName, file.buffer, {
+        headers: {
+          'Content-Type': file.mimetype,
+        },
+      });
 
       return {
         url: result.url,

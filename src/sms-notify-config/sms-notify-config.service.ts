@@ -5,6 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import axios from 'axios';
 import { LessThanOrEqual, Repository } from 'typeorm';
 import { SmsNotifyConfig } from 'src/sms-notify-config/sms-notify-config.entity';
 import { UpdateSmsNotifyConfigDto } from 'src/sms-notify-config/dto/update-sms-notify-config.dto';
@@ -17,6 +18,7 @@ import {
 const SINGLETON_ID = 1;
 const ORDER_TIMEOUT_MS = 10 * 60 * 1000;
 const SCAN_INTERVAL_MS = 60 * 1000;
+const WECOM_WEBHOOK_TIMEOUT_MS = 5000;
 
 @Injectable()
 export class SmsNotifyConfigService implements OnModuleInit, OnModuleDestroy {
@@ -118,22 +120,101 @@ export class SmsNotifyConfigService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private getWecomWebhookUrls(): string[] {
+    const raw =
+      process.env.WECOM_GROUP_BOT_WEBHOOK_URLS ||
+      process.env.WECOM_GROUP_BOT_WEBHOOK_URL ||
+      '';
+
+    return raw
+      .split(',')
+      .map((url) => url.trim())
+      .filter(Boolean);
+  }
+
+  private async sendWecomGroupText(content: string): Promise<void> {
+    const webhookUrls = this.getWecomWebhookUrls();
+    if (webhookUrls.length === 0) {
+      this.logger.debug('未配置企业微信群机器人 Webhook，跳过群提醒');
+      return;
+    }
+
+    for (const webhookUrl of webhookUrls) {
+      try {
+        const { data } = await axios.post(
+          webhookUrl,
+          {
+            msgtype: 'text',
+            text: { content },
+          },
+          { timeout: WECOM_WEBHOOK_TIMEOUT_MS },
+        );
+
+        if (data?.errcode && data.errcode !== 0) {
+          this.logger.warn(
+            `企业微信群提醒失败: ${data.errmsg || data.errcode}`,
+          );
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        this.logger.warn(`企业微信群提醒异常: ${message}`);
+      }
+    }
+  }
+
+  private buildOrderWecomContent(
+    title: string,
+    orderNo: string,
+    userPhone?: string | null,
+    workKindName?: string | null,
+  ): string {
+    const lines = [title, `订单号：${orderNo || '-'}`];
+    if (userPhone) {
+      lines.push(`手机号：${userPhone}`);
+    }
+    if (workKindName) {
+      lines.push(`工种：${workKindName}`);
+    }
+    return lines.join('\n');
+  }
+
   /** 用户发出订单后通知客服 */
-  notifyOrderPlaced(orderNo: string, workKindName?: string | null): void {
+  notifyOrderPlaced(
+    orderNo: string,
+    workKindName?: string | null,
+    userPhone?: string | null,
+  ): void {
     this.sendToAllConfigured(
       SMS_CS_NOTIFY_TEMPLATES.ORDER_PLACED,
       this.orderTemplateParams(orderNo, workKindName),
     ).catch((e) => this.logger.error('发送下单客服短信失败', e));
+    this.sendWecomGroupText(
+      this.buildOrderWecomContent(
+        '有用户发出订单，请关注。',
+        orderNo,
+        userPhone,
+        workKindName,
+      ),
+    ).catch((e) => this.logger.error('发送下单企业微信群提醒失败', e));
   }
 
   /** 超过 10 分钟无人接单（内部可 await，保证发完再落库） */
   private async notifyOrderTimeoutNoAcceptAwait(
     orderNo: string,
     workKindName?: string | null,
+    userPhone?: string | null,
   ): Promise<void> {
     await this.sendToAllConfigured(
       SMS_CS_NOTIFY_TEMPLATES.ORDER_TIMEOUT_NO_ACCEPT,
       this.orderTemplateParams(orderNo, workKindName),
+    );
+    await this.sendWecomGroupText(
+      this.buildOrderWecomContent(
+        '用户发出订单超时，请关注。',
+        orderNo,
+        userPhone,
+        workKindName,
+      ),
     );
   }
 
@@ -142,6 +223,11 @@ export class SmsNotifyConfigService implements OnModuleInit, OnModuleDestroy {
     this.sendToAllConfigured(SMS_CS_NOTIFY_TEMPLATES.WECHAT_USER_REGISTERED, {
       nickname: nickname || '新用户',
     }).catch((e) => this.logger.error('发送新用户注册客服短信失败', e));
+    this.sendWecomGroupText(
+      ['小程序有新用户注册，请关注。', `昵称：${nickname || '新用户'}`].join(
+        '\n',
+      ),
+    ).catch((e) => this.logger.error('发送新用户注册企业微信群提醒失败', e));
   }
 
   private async scanPendingOrdersForTimeoutNotify(): Promise<void> {
@@ -155,6 +241,7 @@ export class SmsNotifyConfigService implements OnModuleInit, OnModuleDestroy {
           cs_timeout_sms_sent: false,
           createdAt: LessThanOrEqual(deadline),
         },
+        relations: ['wechat_user'],
         take: 100,
         order: { createdAt: 'ASC' },
       });
@@ -177,6 +264,7 @@ export class SmsNotifyConfigService implements OnModuleInit, OnModuleDestroy {
           await this.notifyOrderTimeoutNoAcceptAwait(
             order.order_no,
             order.work_kind_name,
+            order.wechat_user?.phone,
           );
         } catch (e) {
           this.logger.error(

@@ -11,6 +11,11 @@ import { Cache, RedisService } from '../common/redis';
 const WORK_TYPE_PAGE_CACHE_PATTERN =
   'cache:WorkTypeService:getWorkTypesByPageInternal:*';
 
+const normalizeSortValue = (sort: unknown): number => {
+  const value = Number(sort);
+  return Number.isFinite(value) && value >= 0 ? Math.trunc(value) : 0;
+};
+
 @Injectable()
 export class WorkTypeService {
   constructor(
@@ -77,7 +82,9 @@ export class WorkTypeService {
       );
     }
 
-    query.orderBy('work_type.createdAt', 'DESC');
+    query
+      .orderBy('work_type.sort', 'DESC')
+      .addOrderBy('work_type.createdAt', 'DESC');
 
     const total = await query.getCount();
     const data = await query
@@ -105,7 +112,10 @@ export class WorkTypeService {
   async createWorkType(createWorkTypeDto: CreateWorkTypeDto): Promise<null> {
     try {
       // 创建新的工种类型记录
-      const workType = this.workTypeRepository.create(createWorkTypeDto);
+      const workType = this.workTypeRepository.create({
+        ...createWorkTypeDto,
+        sort: normalizeSortValue(createWorkTypeDto.sort),
+      });
 
       // 保存到数据库
       await this.workTypeRepository.save(workType);
@@ -155,8 +165,15 @@ export class WorkTypeService {
         throw new BadRequestException('工种类型不存在');
       }
 
+      const updatePayload = { ...updateDto };
+      if (updatePayload.sort !== undefined && updatePayload.sort !== null) {
+        updatePayload.sort = normalizeSortValue(updatePayload.sort);
+      } else {
+        delete updatePayload.sort;
+      }
+
       // 更新记录
-      await this.workTypeRepository.update(id, updateDto);
+      await this.workTypeRepository.update(id, updatePayload);
 
       await this.redisService.deleteByPattern(WORK_TYPE_PAGE_CACHE_PATTERN);
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
@@ -212,7 +229,8 @@ export class WorkTypeService {
           'JSON_UNQUOTE(JSON_EXTRACT(work_type.work_kind, "$.work_kind_code")) = :workKindCode',
           { workKindCode },
         )
-        .orderBy('work_type.createdAt', 'DESC')
+        .orderBy('work_type.sort', 'DESC')
+        .addOrderBy('work_type.createdAt', 'DESC')
         .getMany();
 
       return workTypes;

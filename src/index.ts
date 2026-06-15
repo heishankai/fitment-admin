@@ -23,6 +23,7 @@ export { CraftsmanWechatChatModule } from './craftsman-wechat-chat/craftsman-wec
 export { PlatformNoticeModule } from './platform-notice/platform-notice.module';
 export { SystemNotificationModule } from './system-notification/system-notification.module';
 export { AdminNotificationModule } from './admin-notification/admin-notification.module';
+export { CustomerServiceConfigModule } from './customer-service-config/customer-service-config.module';
 export { GeolocationModule } from './common/geolocation/geolocation.module';
 export { OrderModule } from './order/order.module';
 export { WalletModule } from './wallet/wallet.module';

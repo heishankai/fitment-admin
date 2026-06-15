@@ -110,4 +110,12 @@ export class UpdateCommodityConfigDto {
   @ValidateNested({ each: true })
   @Type(() => CommodityDetailDto)
   commodity_details?: CommodityDetailDto[];
+
+  /**
+   * 排序值，越大越靠前
+   */
+  @IsOptional()
+  @IsNumber({}, { message: '排序值必须是数字' })
+  @Min(0, { message: '排序值不能小于0' })
+  sort?: number;
 }

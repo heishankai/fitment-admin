@@ -3,12 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SystemNotification } from './system-notification.entity';
 import { CreateSystemNotificationDto } from './dto/create-system-notification.dto';
+import { SystemNotificationGateway } from './system-notification.gateway';
 
 @Injectable()
 export class SystemNotificationService {
   constructor(
     @InjectRepository(SystemNotification)
     private readonly notificationRepository: Repository<SystemNotification>,
+    private readonly notificationGateway: SystemNotificationGateway,
   ) {}
 
   /**
@@ -24,7 +26,13 @@ export class SystemNotificationService {
         ...createDto,
         is_read: createDto.is_read || false,
       });
-      return await this.notificationRepository.save(notification);
+      const savedNotification =
+        await this.notificationRepository.save(notification);
+      this.notificationGateway.notifyUser(
+        savedNotification.userId,
+        savedNotification,
+      );
+      return savedNotification;
     } catch (error) {
       throw new BadRequestException('创建系统通知失败: ' + error.message);
     }
@@ -127,4 +135,3 @@ export class SystemNotificationService {
     }
   }
 }
-

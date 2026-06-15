@@ -7,8 +7,24 @@ import {
   IsOptional,
   IsIn,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
+
+const toNumber = (value: unknown): number => {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') return parseFloat(value);
+  return Number(value);
+};
+
+const toOptionalString = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return null;
+};
 
 /**
  * 工价项数据
@@ -19,7 +35,7 @@ export class WorkPriceItemDto {
   work_price_id: number;
 
   @IsNotEmpty({ message: '工价不能为空' })
-  @Transform(({ value }) => parseFloat(value))
+  @Transform(({ value }: { value: unknown }) => toNumber(value))
   @IsNumber()
   @Min(0, { message: '工价不能小于0' })
   work_price: number;
@@ -29,7 +45,7 @@ export class WorkPriceItemDto {
   work_title: string;
 
   @IsNotEmpty({ message: '数量不能为空' })
-  @Transform(({ value }) => parseFloat(value))
+  @Transform(({ value }: { value: unknown }) => toNumber(value))
   @IsNumber()
   @Min(0, { message: '数量不能小于0' })
   quantity: number;
@@ -47,7 +63,7 @@ export class WorkPriceItemDto {
   labour_cost_name: string;
 
   @IsOptional()
-  @Transform(({ value }) => (value === null ? null : String(value)))
+  @Transform(({ value }: { value: unknown }) => toOptionalString(value))
   minimum_price?: string | null;
 
   @IsNotEmpty({ message: '是否设置最低价格不能为空' })
@@ -65,13 +81,13 @@ export class CreateWorkPriceItemsDto {
   order_id: number;
 
   @IsNotEmpty({ message: '面积不能为空' })
-  @Transform(({ value }) => (typeof value === 'string' ? parseFloat(value) : value))
+  @Transform(({ value }: { value: unknown }) => toNumber(value))
   @IsNumber()
   @Min(0, { message: '面积不能小于0' })
   area: number | string;
 
   @IsNotEmpty({ message: '总价不能为空' })
-  @Transform(({ value }) => (typeof value === 'string' ? parseFloat(value) : value))
+  @Transform(({ value }: { value: unknown }) => toNumber(value))
   @IsNumber()
   @Min(0, { message: '总价不能小于0' })
   total_price: number;
@@ -81,5 +97,17 @@ export class CreateWorkPriceItemsDto {
   @ValidateNested({ each: true })
   @Type(() => WorkPriceItemDto)
   work_price_list: WorkPriceItemDto[];
-}
 
+  @IsOptional()
+  @IsString()
+  @IsIn(['auto', 'manual'], { message: '工长费模式必须是auto或manual' })
+  gangmaster_cost_mode?: 'auto' | 'manual';
+
+  @ValidateIf(
+    (dto: CreateWorkPriceItemsDto) => dto.gangmaster_cost_mode === 'manual',
+  )
+  @Transform(({ value }: { value: unknown }) => toNumber(value))
+  @IsNumber({}, { message: '本次工长费必须是数字' })
+  @Min(0, { message: '本次工长费不能小于0' })
+  manual_gangmaster_cost?: number;
+}

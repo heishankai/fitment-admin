@@ -1,0 +1,4 @@
+allowBuilds:
+  '@alicloud/openapi-core': true
+  '@nestjs/core': true
+  unrs-resolver: true

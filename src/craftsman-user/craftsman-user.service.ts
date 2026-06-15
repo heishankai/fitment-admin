@@ -7,8 +7,14 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
+import axios from 'axios';
 // constants
-import { JWT_CONFIG } from '../common/constants/app.constants';
+import {
+  CRAFT_WECHAT_CONFIG,
+  JWT_CONFIG,
+  WECHAT_LOGIN_URL,
+  WECHAT_PHONE_URL,
+} from '../common/constants/app.constants';
 // entity
 import { CraftsmanUser } from './craftsman-user.entity';
 import { IsSkillVerified } from '../is-skill-verified/is-skill-verified.entity';
@@ -17,10 +23,14 @@ import { WorkKind } from '../work-kind/work-kind.entity';
 import { LoginDto } from './dto/login.dto';
 import { UpdateCraftsmanUserDto } from './dto/update-craftsman-user.dto';
 import { QueryCraftsmanUserDto } from './dto/query-craftsman-user.dto';
-import { SmsService } from '../sms/sms.service';
+import { GetPhoneDto } from './dto/get-phone.dto';
 
 @Injectable()
 export class CraftsmanUserService {
+  private readonly defaultNickname = '智惠装师傅';
+  private readonly defaultAvatar =
+    'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1780231126950_qyilqt_XXJCYNCHV6BF35a2091a33e4132c7c92a6ae41053a4c.png';
+
   constructor(
     @InjectRepository(CraftsmanUser)
     private readonly craftsmanUserRepository: Repository<CraftsmanUser>,
@@ -31,50 +41,42 @@ export class CraftsmanUserService {
     @InjectRepository(WorkKind)
     private readonly workKindRepository: Repository<WorkKind>,
     private readonly jwtService: JwtService,
-    private readonly smsService: SmsService,
   ) {}
 
   /**
-   * 手机号验证码登录/注册
-   * @param loginDto 登录信息（phone 和 code）
+   * 工匠端微信登录/注册
+   * @param loginDto 登录信息（wx.login 返回的 code）
    * @returns 用户信息（包含token）
    */
   async loginOrRegister(loginDto: LoginDto): Promise<{
     phone: string;
+    openid: string;
     nickname: string;
     avatar: string;
     token: string;
   }> {
     try {
-      const { phone, code } = loginDto;
+      const { openid } = await this.getCraftWechatOpenid(loginDto.code);
 
-      // 1. 验证验证码
-      const isValidCode = this.smsService.verifyCode(phone, code);
-      if (!isValidCode) {
-        throw new HttpException('验证码无效或已过期', HttpStatus.BAD_REQUEST);
-      }
-
-      // 2. 查找用户是否存在
+      // 先按 openid 找已迁移到微信登录的工匠账号。
       let user = await this.craftsmanUserRepository.findOne({
-        where: { phone },
+        where: { openid },
       });
 
-      // 3. 如果用户不存在，创建新用户
       if (!user) {
         user = this.craftsmanUserRepository.create({
-          phone,
-          nickname: '智惠装师傅',
-          avatar:
-            'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',
+          openid,
+          phone: this.buildWechatPlaceholderPhone(openid),
+          nickname: this.defaultNickname,
+          avatar: this.defaultAvatar,
         });
         user = await this.craftsmanUserRepository.save(user);
       }
 
-      // 4. 生成JWT token，payload包含phone和code
       const payload = {
         userId: user.id,
+        openid: user.openid,
         phone: user.phone,
-        code: code, // 将验证码包含在payload中
         type: 'craftsman',
       };
 
@@ -83,13 +85,11 @@ export class CraftsmanUserService {
         expiresIn: JWT_CONFIG.expiresIn,
       });
 
-      // 5. 返回用户信息
       return {
         phone: user.phone,
-        nickname: user.nickname || '智惠装师傅',
-        avatar:
-          user.avatar ||
-          'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',
+        openid: user.openid,
+        nickname: user.nickname || this.defaultNickname,
+        avatar: user.avatar || this.defaultAvatar,
         token,
       };
     } catch (error) {
@@ -101,6 +101,164 @@ export class CraftsmanUserService {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  /**
+   * 用微信手机号授权 code 绑定当前工匠账号手机号。
+   * 如果手机号对应旧短信账号，则把 openid 绑定到旧账号，完成平滑迁移。
+   */
+  async getPhoneNumberAndUpdateUser(phoneDto: GetPhoneDto): Promise<
+    CraftsmanUser & {
+      token: string;
+    }
+  > {
+    try {
+      const phone = await this.getPhoneNumberFromWechat(phoneDto.code);
+
+      const openidUser = await this.craftsmanUserRepository.findOne({
+        where: { openid: phoneDto.openid },
+      });
+      let phoneUser = await this.craftsmanUserRepository.findOne({
+        where: { phone },
+      });
+
+      if (phoneUser && openidUser && phoneUser.id !== openidUser.id) {
+        // 释放临时微信账号上的 openid，再迁移到原手机号账号。
+        await this.craftsmanUserRepository.update(openidUser.id, {
+          openid: null,
+        });
+      }
+
+      if (phoneUser) {
+        phoneUser.openid = phoneDto.openid;
+        phoneUser = await this.craftsmanUserRepository.save(phoneUser);
+        return this.withCraftsmanToken(phoneUser);
+      }
+
+      if (openidUser) {
+        openidUser.phone = phone;
+        const updatedUser = await this.craftsmanUserRepository.save(openidUser);
+        return this.withCraftsmanToken(updatedUser);
+      }
+
+      const newUser = this.craftsmanUserRepository.create({
+        openid: phoneDto.openid,
+        phone,
+        nickname: this.defaultNickname,
+        avatar: this.defaultAvatar,
+      });
+
+      return this.withCraftsmanToken(
+        await this.craftsmanUserRepository.save(newUser),
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '获取手机号码失败，请稍后重试',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  private async getCraftWechatOpenid(code: string): Promise<{ openid: string }> {
+    const { data } = await axios.get(WECHAT_LOGIN_URL, {
+      params: {
+        appid: CRAFT_WECHAT_CONFIG.appid,
+        secret: CRAFT_WECHAT_CONFIG.secret,
+        js_code: code,
+        grant_type: 'authorization_code',
+      },
+    });
+
+    if (data?.errcode) {
+      throw new HttpException(
+        `微信登录失败: ${data.errmsg || '未知错误'}`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (!data?.openid) {
+      throw new HttpException('获取openid失败', HttpStatus.BAD_REQUEST);
+    }
+
+    return { openid: data.openid };
+  }
+
+  private buildWechatPlaceholderPhone(openid: string): string {
+    return `wx_${openid}`;
+  }
+
+  private async getPhoneNumberFromWechat(code: string): Promise<string> {
+    const accessToken = await this.getCraftWechatAccessToken();
+    const { data } = await axios.post(
+      WECHAT_PHONE_URL,
+      { code },
+      { params: { access_token: accessToken } },
+    );
+
+    if (data?.errcode && data.errcode !== 0) {
+      throw new HttpException(
+        `获取手机号码失败: ${data.errmsg || '未知错误'}`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const phone = data?.phone_info?.phoneNumber;
+    if (!phone) {
+      throw new HttpException('获取手机号码失败', HttpStatus.BAD_REQUEST);
+    }
+
+    return phone;
+  }
+
+  private async getCraftWechatAccessToken(): Promise<string> {
+    const { data } = await axios.get(
+      'https://api.weixin.qq.com/cgi-bin/token',
+      {
+        params: {
+          grant_type: 'client_credential',
+          appid: CRAFT_WECHAT_CONFIG.appid,
+          secret: CRAFT_WECHAT_CONFIG.secret,
+        },
+      },
+    );
+
+    if (data?.errcode) {
+      throw new HttpException(
+        `获取access_token失败: ${data.errmsg || '未知错误'}`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (!data?.access_token) {
+      throw new HttpException('获取access_token失败', HttpStatus.BAD_REQUEST);
+    }
+
+    return data.access_token;
+  }
+
+  private withCraftsmanToken<T extends CraftsmanUser>(
+    user: T,
+  ): T & { token: string } {
+    const token = this.jwtService.sign(
+      {
+        userId: user.id,
+        openid: user.openid,
+        phone: user.phone,
+        type: 'craftsman',
+      },
+      {
+        secret: JWT_CONFIG.secret,
+        expiresIn: JWT_CONFIG.expiresIn,
+      },
+    );
+
+    return {
+      ...user,
+      token,
+    };
   }
 
   /**
@@ -150,7 +308,7 @@ export class CraftsmanUserService {
         nickname: user.nickname || '智惠装师傅',
         avatar:
           user.avatar ||
-          'https://din-dang-zhi-zhuang.oss-cn-hangzhou.aliyuncs.com/uploads/1763214991038_s366qe_logo.png',
+          this.defaultAvatar,
         isVerified: user.isVerified || false,
         // isSkillVerified 动态返回：只有当用户真正通过认证时才为 true
         isSkillVerified: user.isSkillVerified === true,
@@ -239,7 +397,9 @@ export class CraftsmanUserService {
    * 获取所有工匠用户
    * @returns 所有工匠用户列表（包含技能信息）
    */
-  async getAllCraftsmanUsers(): Promise<Array<CraftsmanUser & { skillInfo: IsSkillVerified | null }>> {
+  async getAllCraftsmanUsers(): Promise<
+    Array<CraftsmanUser & { skillInfo: IsSkillVerified | null }>
+  > {
     try {
       // 查询所有工匠用户
       const users = await this.craftsmanUserRepository.find({
@@ -281,9 +441,7 @@ export class CraftsmanUserService {
    * @param queryDto 查询参数 {pageIndex, pageSize, nickname, phone, work_kind_code?}
    * @returns 分页结果
    */
-  async getCraftsmanUsersByPage(
-    queryDto: QueryCraftsmanUserDto,
-  ): Promise<any> {
+  async getCraftsmanUsersByPage(queryDto: QueryCraftsmanUserDto): Promise<any> {
     try {
       // 获取参数
       const {
@@ -292,6 +450,7 @@ export class CraftsmanUserService {
         nickname = '',
         phone = '',
       } = queryDto;
+      const phoneTrimmed = phone.trim();
       const workKindCodeTrimmed = queryDto.work_kind_code?.trim() || '';
 
       if (workKindCodeTrimmed) {
@@ -328,9 +487,9 @@ export class CraftsmanUserService {
           nickname: `%${nickname}%`,
         });
       }
-      if (phone) {
-        query.andWhere('craftsman_user.phone LIKE :phone', {
-          phone: `%${phone}%`,
+      if (phoneTrimmed) {
+        query.andWhere('craftsman_user.phone = :phone', {
+          phone: phoneTrimmed,
         });
       }
 
@@ -400,7 +559,9 @@ export class CraftsmanUserService {
    * @param id 工匠用户ID
    * @returns 工匠用户信息（包含技能信息）
    */
-  async findOne(id: number): Promise<CraftsmanUser & { skillInfo: IsSkillVerified | null }> {
+  async findOne(
+    id: number,
+  ): Promise<CraftsmanUser & { skillInfo: IsSkillVerified | null }> {
     const user = await this.craftsmanUserRepository.findOne({
       where: { id },
     });
@@ -449,5 +610,4 @@ export class CraftsmanUserService {
       throw new BadRequestException('删除工匠用户失败: ' + error.message);
     }
   }
-
 }

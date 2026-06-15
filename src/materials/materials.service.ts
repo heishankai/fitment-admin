@@ -92,9 +92,18 @@ export class MaterialsService {
         throw new HttpException('订单不存在', HttpStatus.NOT_FOUND);
       }
 
-      // 查询该订单的所有辅材
+      const targetOrderIds = [orderId];
+      if (order.parent_order_id === null || order.parent_order_id === undefined) {
+        const childOrders = await this.orderRepository.find({
+          where: { parent_order_id: orderId },
+          select: ['id'],
+        });
+        targetOrderIds.push(...childOrders.map((item) => item.id));
+      }
+
+      // 查询该订单及其工匠子单的所有辅材，便于工长单按工种合并展示
       const materials = await this.materialsRepository.find({
-        where: { orderId },
+        where: { orderId: In(targetOrderIds) },
         order: { createdAt: 'DESC' },
       });
 

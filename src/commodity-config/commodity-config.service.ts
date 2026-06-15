@@ -6,6 +6,11 @@ import { CreateCommodityConfigDto } from './dto/create-commodity-config.dto';
 import { QueryCommodityConfigDto } from './dto/query-commodity-config.dto';
 import { UpdateCommodityConfigDto } from './dto/update-commodity-config.dto';
 
+const normalizeSortValue = (sort: unknown): number => {
+  const value = Number(sort);
+  return Number.isFinite(value) && value >= 0 ? Math.trunc(value) : 0;
+};
+
 @Injectable()
 export class CommodityConfigService {
   constructor(
@@ -29,8 +34,10 @@ export class CommodityConfigService {
         });
       }
 
-      // 按创建时间倒序排列
-      queryBuilder.orderBy('commodity_config.createdAt', 'DESC');
+      // 按排序值倒序排列，排序值相同则按创建时间倒序
+      queryBuilder
+        .orderBy('commodity_config.sort', 'DESC')
+        .addOrderBy('commodity_config.createdAt', 'DESC');
 
       const commodityConfigs = await queryBuilder.getMany();
       return commodityConfigs;
@@ -77,8 +84,10 @@ export class CommodityConfigService {
         });
       }
 
-      // 按创建时间倒序排列
-      query.orderBy('commodity_config.createdAt', 'DESC');
+      // 按排序值倒序排列，排序值相同则按创建时间倒序
+      query
+        .orderBy('commodity_config.sort', 'DESC')
+        .addOrderBy('commodity_config.createdAt', 'DESC');
 
       // 查询总数
       const total = await query.getCount();
@@ -123,7 +132,10 @@ export class CommodityConfigService {
   async create(createDto: CreateCommodityConfigDto): Promise<null> {
     try {
       // 创建新的商品配置记录
-      const commodityConfig = this.commodityConfigRepository.create(createDto);
+      const commodityConfig = this.commodityConfigRepository.create({
+        ...createDto,
+        sort: normalizeSortValue(createDto.sort),
+      });
 
       // 保存到数据库
       await this.commodityConfigRepository.save(commodityConfig);
@@ -169,8 +181,15 @@ export class CommodityConfigService {
         throw new BadRequestException('商品配置记录不存在');
       }
 
+      const updatePayload = { ...updateDto };
+      if (updatePayload.sort !== undefined && updatePayload.sort !== null) {
+        updatePayload.sort = normalizeSortValue(updatePayload.sort);
+      } else {
+        delete updatePayload.sort;
+      }
+
       // 更新记录
-      await this.commodityConfigRepository.update(id, updateDto);
+      await this.commodityConfigRepository.update(id, updatePayload);
 
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
       return null;

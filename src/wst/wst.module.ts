@@ -7,6 +7,7 @@ import { ChatRoom } from './entities/chat-room.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { WechatUserModule } from '../wechat-user/wechat-user.module';
 import { AdminNotificationModule } from '../admin-notification/admin-notification.module';
+import { CustomerServiceConfigModule } from '../customer-service-config/customer-service-config.module';
 
 /**
  * 聊天模块
@@ -18,6 +19,7 @@ import { AdminNotificationModule } from '../admin-notification/admin-notificatio
     TypeOrmModule.forFeature([ChatRoom, ChatMessage]),
     WechatUserModule,
     AdminNotificationModule,
+    CustomerServiceConfigModule,
   ],
   controllers: [WstController],
   providers: [WstGateway, WstService],

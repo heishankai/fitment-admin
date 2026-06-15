@@ -74,4 +74,9 @@ export class CreateCommodityConfigDto {
   @ValidateNested({ each: true })
   @Type(() => CommodityDetailDto)
   commodity_details: CommodityDetailDto[]; // 商品详情
+
+  @IsNumber({}, { message: '排序值必须是数字' })
+  @Min(0, { message: '排序值不能小于0' })
+  @IsOptional()
+  sort?: number; // 排序值，越大越靠前
 }

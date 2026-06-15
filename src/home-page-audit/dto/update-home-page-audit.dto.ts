@@ -1,4 +1,11 @@
-import { IsOptional, IsArray, IsString, IsNumber, IsIn } from 'class-validator';
+import {
+  IsOptional,
+  IsArray,
+  IsString,
+  IsNumber,
+  IsIn,
+  ArrayMaxSize,
+} from 'class-validator';
 
 /**
  * 更新首页审核信息DTO
@@ -18,6 +25,15 @@ export class UpdateHomePageAuditDto {
   @IsArray({ message: '工地图片必须是数组' })
   @IsString({ each: true, message: '每张图片必须是字符串URL' })
   publish_images?: string[];
+
+  /**
+   * 工地视频
+   */
+  @IsOptional()
+  @IsArray({ message: '工地视频必须是数组' })
+  @ArrayMaxSize(1, { message: '工地视频最多上传一个' })
+  @IsString({ each: true, message: '每个视频必须是字符串URL' })
+  publish_video?: string[];
 
   /**
    * 审核状态：1-已发布 2-审核中 3-审核失败

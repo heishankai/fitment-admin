@@ -13,6 +13,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { JWT_CONFIG } from '../common/constants/app.constants';
 import { WstService } from './wst.service';
 import { AdminNotificationService } from '../admin-notification/admin-notification.service';
+import { CustomerServiceConfigService } from '../customer-service-config/customer-service-config.service';
 
 /**
  * WebSocket Gateway for Chat
@@ -41,6 +42,7 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly jwtService: JwtService,
     private readonly wstService: WstService,
     private readonly adminNotificationService: AdminNotificationService,
+    private readonly customerServiceConfigService: CustomerServiceConfigService,
   ) {}
 
   /**
@@ -84,12 +86,14 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
           // 检查房间是否有消息，如果没有消息，发送欢迎消息
           const hasMessages = await this.wstService.hasMessages(roomId);
           if (!hasMessages) {
+            const serviceConfig =
+              await this.customerServiceConfigService.getConfig();
             // 发送欢迎消息（以客服身份发送，senderId 使用 0 表示系统）
             const welcomeMessage = await this.wstService.createMessage(
               roomId,
               'service',
               0,
-              '欢迎使用智惠装，请问有什么可以帮助您的吗？',
+              serviceConfig.welcome_text,
               'text',
             );
             
@@ -107,10 +111,39 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
               content: welcomeMessage.content,
               read: welcomeMessage.read,
               createdAt: welcomeMessage.createdAt,
+              serviceAvatar: serviceConfig.avatar,
             };
             
             // 广播欢迎消息到房间内的所有客户端
             this.server.to(`room:${roomId}`).emit('new-message', messageData);
+
+            if (serviceConfig.welcome_image) {
+              const welcomeImageMessage = await this.wstService.createMessage(
+                roomId,
+                'service',
+                0,
+                serviceConfig.welcome_image,
+                'image',
+              );
+              const imageMessageData = {
+                id: welcomeImageMessage.id,
+                chat_room_id: welcomeImageMessage.chat_room_id,
+                roomId: welcomeImageMessage.chat_room_id,
+                sender_type: welcomeImageMessage.sender_type,
+                senderType: welcomeImageMessage.sender_type,
+                sender_id: welcomeImageMessage.sender_id,
+                senderId: welcomeImageMessage.sender_id,
+                message_type: welcomeImageMessage.message_type || 'image',
+                messageType: welcomeImageMessage.message_type || 'image',
+                content: welcomeImageMessage.content,
+                read: welcomeImageMessage.read,
+                createdAt: welcomeImageMessage.createdAt,
+                serviceAvatar: serviceConfig.avatar,
+              };
+              this.server
+                .to(`room:${roomId}`)
+                .emit('new-message', imageMessageData);
+            }
             this.logger.log(`房间 ${roomId} 发送欢迎消息`);
           }
         }
@@ -212,6 +245,10 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
         content,
         messageType,
       );
+      const serviceConfig =
+        userType === 'service'
+          ? await this.customerServiceConfigService.getConfig()
+          : null;
 
       // 如果是业主发送的消息，创建通知
       if (userType === 'wechat') {
@@ -253,6 +290,7 @@ export class WstGateway implements OnGatewayConnection, OnGatewayDisconnect {
         content: message.content,
         read: message.read,
         createdAt: message.createdAt,
+        serviceAvatar: serviceConfig?.avatar,
       };
 
       // 广播消息到房间内的所有客户端

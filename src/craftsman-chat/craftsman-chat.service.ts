@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { CraftsmanChatRoom } from './entities/craftsman-chat-room.entity';
 import { CraftsmanChatMessage } from './entities/craftsman-chat-message.entity';
 import { CreateCraftsmanChatRoomDto } from './dto/create-craftsman-chat-room.dto';
+import { CustomerServiceConfigService } from '../customer-service-config/customer-service-config.service';
 
 /**
  * 工匠聊天服务类
@@ -16,6 +17,7 @@ export class CraftsmanChatService {
     private readonly chatRoomRepository: Repository<CraftsmanChatRoom>,
     @InjectRepository(CraftsmanChatMessage)
     private readonly chatMessageRepository: Repository<CraftsmanChatMessage>,
+    private readonly customerServiceConfigService: CustomerServiceConfigService,
   ) {}
 
   /**
@@ -229,6 +231,7 @@ export class CraftsmanChatService {
       where: { chat_room_id: room.id },
       order: { createdAt: 'DESC' },
     });
+    const serviceConfig = await this.customerServiceConfigService.getConfig();
 
     return {
       id: room.id,
@@ -253,6 +256,11 @@ export class CraftsmanChatService {
             createdAt: lastMessage.createdAt,
           }
         : null,
+      service_config: {
+        avatar: serviceConfig.avatar,
+        welcome_text: serviceConfig.welcome_text,
+        welcome_image: serviceConfig.welcome_image,
+      },
       createdAt: room.createdAt,
       updatedAt: room.updatedAt,
     };
@@ -434,4 +442,3 @@ export class CraftsmanChatService {
     return count > 0;
   }
 }
-

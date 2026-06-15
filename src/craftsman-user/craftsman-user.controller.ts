@@ -15,6 +15,7 @@ import {
 import { Public } from '../auth/public.decorator';
 import { CraftsmanUserService } from './craftsman-user.service';
 import { LoginDto } from './dto/login.dto';
+import { GetPhoneDto } from './dto/get-phone.dto';
 import { UpdateCraftsmanUserDto } from './dto/update-craftsman-user.dto';
 import { QueryCraftsmanUserDto } from './dto/query-craftsman-user.dto';
 import { CraftsmanUser } from './craftsman-user.entity';
@@ -24,12 +25,12 @@ export class CraftsmanUserController {
   constructor(private readonly craftsmanUserService: CraftsmanUserService) {}
 
   /**
-   * 手机号验证码登录/注册
-   * @param body { phone: string, code: string }
+   * 工匠端微信登录/注册
+   * @param body { code: string }
    * @returns 用户信息（包含token）
    */
   @Public()
-  @Post('login')
+  @Post(['login', 'wechat-login'])
   async loginOrRegister(@Body() body: LoginDto) {
     try {
       return await this.craftsmanUserService.loginOrRegister(body);
@@ -38,6 +39,27 @@ export class CraftsmanUserController {
         throw error;
       }
       throw new HttpException('登录失败', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * 微信手机号授权绑定
+   * @param body { code: string, openid: string }
+   * @returns 完整用户信息（包含token）
+   */
+  @Public()
+  @Post('phone')
+  async getPhoneNumberAndUpdateUser(@Body() body: GetPhoneDto) {
+    try {
+      return await this.craftsmanUserService.getPhoneNumberAndUpdateUser(body);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '获取手机号码失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 

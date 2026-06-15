@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { ChatRoom } from './entities/chat-room.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { CreateChatRoomDto } from './dto/create-chat-room.dto';
+import { CustomerServiceConfigService } from '../customer-service-config/customer-service-config.service';
 
 /**
  * 聊天服务类
@@ -16,6 +17,7 @@ export class WstService {
     private readonly chatRoomRepository: Repository<ChatRoom>,
     @InjectRepository(ChatMessage)
     private readonly chatMessageRepository: Repository<ChatMessage>,
+    private readonly customerServiceConfigService: CustomerServiceConfigService,
   ) {}
 
   /**
@@ -221,6 +223,7 @@ export class WstService {
       where: { chat_room_id: room.id },
       order: { createdAt: 'DESC' },
     });
+    const serviceConfig = await this.customerServiceConfigService.getConfig();
 
     return {
       id: room.id,
@@ -245,6 +248,11 @@ export class WstService {
             createdAt: lastMessage.createdAt,
           }
         : null,
+      service_config: {
+        avatar: serviceConfig.avatar,
+        welcome_text: serviceConfig.welcome_text,
+        welcome_image: serviceConfig.welcome_image,
+      },
       createdAt: room.createdAt,
       updatedAt: room.updatedAt,
     };

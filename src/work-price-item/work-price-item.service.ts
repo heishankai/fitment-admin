@@ -13,11 +13,22 @@ import { Order, OrderStatus } from '../order/order.entity';
 import { WX_PAY_CONFIG } from '../common/constants/app.constants';
 import { CreateWorkPriceItemsDto } from './dto/create-work-price-items.dto';
 import { Materials } from '../materials/materials.entity';
-import { MaterialsResponseDto, CommodityItemResponse } from '../materials/dto/materials-response.dto';
+import {
+  MaterialsResponseDto,
+  CommodityItemResponse,
+} from '../materials/dto/materials-response.dto';
 import { ConstructionProgressService } from '../construction-progress/construction-progress.service';
 import { OrderService } from '../order/order.service';
 import { PlatformIncomeRecordService } from '../platform-income-record/platform-income-record.service';
 import { CostType } from '../platform-income-record/platform-income-record.entity';
+
+type GangmasterCostMode = 'auto' | 'manual';
+
+type GangmasterCostOption = {
+  mode?: GangmasterCostMode;
+  amount?: number;
+  currentConstructionCost?: number;
+};
 
 @Injectable()
 export class WorkPriceItemService {
@@ -95,13 +106,17 @@ export class WorkPriceItemService {
   }
 
   /**
-   * 每次提交工价后，按「累计重新计算 - 已入账数组之和」追加本次应收差额。
+   * 每次提交工价后更新订单费用：
+   * - 自动工长费：保持原逻辑，按「累计重新计算 - 已入账数组之和」追加本次差额。
+   * - 手动工长费：把输入值作为“本次工长费”直接追加，不冲抵历史工长费。
    * 同时保留订单旧的标量字段，供现有支付、列表和验收逻辑继续使用。
    */
   private async updateOrderFeeListsAfterWorkPriceCreate(
     orderId: number,
     orderType: string,
     area: number | string,
+    previousWorkItemCount = 0,
+    gangmasterCostOption: GangmasterCostOption = {},
   ): Promise<void> {
     try {
       const order = await this.orderRepository.findOne({
@@ -118,7 +133,9 @@ export class WorkPriceItemService {
       const constructionCost = workItems
         .reduce(
           (sum, item) =>
-            sum.plus(item.settlement_amount || item.calculateSettlementAmount()),
+            sum.plus(
+              item.settlement_amount || item.calculateSettlementAmount(),
+            ),
           new Decimal(0),
         )
         .toDecimalPlaces(2)
@@ -128,19 +145,50 @@ export class WorkPriceItemService {
         typeof area === 'string' ? parseFloat(area) || 0 : area || 0;
       let calculatedServiceFee = 0;
       let calculatedGangmasterCost = 0;
+      let currentGangmasterCost = 0;
       let visitingServiceNum = 0;
+      let useManualGangmasterCost = false;
 
       if (orderType === 'gangmaster') {
         const foremanResult = this.calcForeman(actualArea, constructionCost);
+        const hasManualGangmasterCost =
+          gangmasterCostOption.amount !== undefined &&
+          gangmasterCostOption.amount !== null;
+        const manualGangmasterCost = hasManualGangmasterCost
+          ? this.toMoney(gangmasterCostOption.amount)
+          : 0;
+        useManualGangmasterCost =
+          gangmasterCostOption.mode === 'manual' &&
+          hasManualGangmasterCost &&
+          Number.isFinite(manualGangmasterCost);
+
+        currentGangmasterCost = useManualGangmasterCost
+          ? manualGangmasterCost
+          : 0;
         calculatedGangmasterCost = foremanResult.foremanFee;
         visitingServiceNum = foremanResult.visits;
-        calculatedServiceFee = (calculatedGangmasterCost + constructionCost) * 0.1;
+        calculatedServiceFee = useManualGangmasterCost
+          ? (currentGangmasterCost +
+              this.toMoney(gangmasterCostOption.currentConstructionCost)) *
+            0.1
+          : (calculatedGangmasterCost + constructionCost) * 0.1;
+        order.gangmaster_cost_source = useManualGangmasterCost
+          ? 'manual'
+          : 'auto';
+        order.manual_gangmaster_cost = useManualGangmasterCost
+          ? currentGangmasterCost
+          : null;
       } else {
         calculatedServiceFee = constructionCost * 0.1;
+        order.gangmaster_cost_source = 'auto';
+        order.manual_gangmaster_cost = null;
       }
 
+      const isFirstWorkPriceCreate = previousWorkItemCount === 0;
       const serviceFeeSeed =
-        !order.total_service_fee_list && Number(order.total_service_fee) > 0
+        !isFirstWorkPriceCreate &&
+        !order.total_service_fee_list &&
+        Number(order.total_service_fee) > 0
           ? [Number(order.total_service_fee)]
           : [];
       const serviceFeeList = this.normalizeMoneyList(
@@ -152,9 +200,9 @@ export class WorkPriceItemService {
         serviceFeeList,
         order.total_service_fee_is_paid,
       );
-      const serviceFeeDelta = this.toMoney(
-        calculatedServiceFee - this.sumMoney(serviceFeeList),
-      );
+      const serviceFeeDelta = useManualGangmasterCost
+        ? this.toMoney(calculatedServiceFee)
+        : this.toMoney(calculatedServiceFee - this.sumMoney(serviceFeeList));
       serviceFeeList.push(serviceFeeDelta);
       serviceFeePaidList.push(serviceFeeDelta < 0.01);
 
@@ -168,7 +216,9 @@ export class WorkPriceItemService {
 
       if (orderType === 'gangmaster') {
         const gangmasterCostSeed =
-          !order.gangmaster_cost_list && Number(order.gangmaster_cost) > 0
+          !isFirstWorkPriceCreate &&
+          !order.gangmaster_cost_list &&
+          Number(order.gangmaster_cost) > 0
             ? [Number(order.gangmaster_cost)]
             : [];
         const gangmasterCostList = this.normalizeMoneyList(
@@ -180,9 +230,11 @@ export class WorkPriceItemService {
           gangmasterCostList,
           order.gangmaster_cost_is_paid,
         );
-        const gangmasterCostDelta = this.toMoney(
-          calculatedGangmasterCost - this.sumMoney(gangmasterCostList),
-        );
+        const gangmasterCostDelta = useManualGangmasterCost
+          ? this.toMoney(currentGangmasterCost)
+          : this.toMoney(
+              calculatedGangmasterCost - this.sumMoney(gangmasterCostList),
+            );
         gangmasterCostList.push(gangmasterCostDelta);
         gangmasterCostPaidList.push(gangmasterCostDelta < 0.01);
 
@@ -196,8 +248,7 @@ export class WorkPriceItemService {
         );
       } else {
         order.gangmaster_cost_list = order.gangmaster_cost_list || [];
-        order.gangmaster_cost_paid_list =
-          order.gangmaster_cost_paid_list || [];
+        order.gangmaster_cost_paid_list = order.gangmaster_cost_paid_list || [];
         order.gangmaster_cost = null;
         order.visiting_service_num = 0;
       }
@@ -280,9 +331,9 @@ export class WorkPriceItemService {
 
     const groupMap = new Map<number, WorkPriceItem[]>();
     for (const i of subItems) {
-      const gid = i.work_group_id!;
+      const gid = i.work_group_id;
       if (!groupMap.has(gid)) groupMap.set(gid, []);
-      groupMap.get(gid)!.push(i);
+      groupMap.get(gid).push(i);
     }
     const subGroups = Array.from(groupMap.entries())
       .sort(([a], [b]) => a - b)
@@ -625,9 +676,7 @@ export class WorkPriceItemService {
    * @param workGroupId 工价组ID
    * @returns 子工价项列表
    */
-  async findSubWorkPriceItems(
-    workGroupId: number,
-  ): Promise<WorkPriceItem[]> {
+  async findSubWorkPriceItems(workGroupId: number): Promise<WorkPriceItem[]> {
     try {
       return await this.workPriceItemRepository.find({
         where: {
@@ -705,11 +754,11 @@ export class WorkPriceItemService {
       // 按 work_group_id 分组
       const workGroupMap = new Map<number, WorkPriceItem[]>();
       for (const item of subWorkItems) {
-        const groupId = item.work_group_id!;
+        const groupId = item.work_group_id;
         if (!workGroupMap.has(groupId)) {
           workGroupMap.set(groupId, []);
         }
-        workGroupMap.get(groupId)!.push(item);
+        workGroupMap.get(groupId).push(item);
       }
 
       // 查询订单的工匠信息
@@ -761,13 +810,15 @@ export class WorkPriceItemService {
                     } else {
                       // 当前查询的是普通订单（工长订单）
                       // 工价项在当前订单中，如果已分配给工匠，需要找到对应的工匠订单
-                      const craftsmanOrder = await this.orderRepository.findOne({
-                        where: {
-                          parent_order_id: item.order_id,
-                          craftsman_user_id: item.assigned_craftsman_id,
-                          is_assigned: true,
+                      const craftsmanOrder = await this.orderRepository.findOne(
+                        {
+                          where: {
+                            parent_order_id: item.order_id,
+                            craftsman_user_id: item.assigned_craftsman_id,
+                            is_assigned: true,
+                          },
                         },
-                      });
+                      );
 
                       if (craftsmanOrder) {
                         // 找到了对应的工匠订单，查询工匠订单的施工进度
@@ -862,7 +913,8 @@ export class WorkPriceItemService {
       let orderType = order.order_type;
       if (!orderType) {
         // 如果订单中没有 order_type，根据 work_kind_name 判断
-        orderType = order.work_kind_name === '工长' ? 'gangmaster' : 'craftsman';
+        orderType =
+          order.work_kind_name === '工长' ? 'gangmaster' : 'craftsman';
       }
       const ownerIds = await this.resolveWorkPriceOwnerIds(order, orderType);
 
@@ -876,7 +928,7 @@ export class WorkPriceItemService {
       });
 
       let workGroupId = 1; // 默认第1组（主工价组）
-      
+
       // 如果订单有 parent_order_id，说明是工匠订单，创建的都是子工价
       if (order.parent_order_id) {
         // 工匠订单的工价都是子工价，从第2组开始
@@ -935,12 +987,28 @@ export class WorkPriceItemService {
 
       // 5. 批量创建工价项（settlement_amount 会在 BeforeInsert 钩子中自动计算）
       const createdItems = await this.createBatch(workPriceItemsData);
+      const currentConstructionCost = createdItems
+        .reduce(
+          (sum, item) =>
+            sum.plus(
+              item.settlement_amount || item.calculateSettlementAmount(),
+            ),
+          new Decimal(0),
+        )
+        .toDecimalPlaces(2)
+        .toNumber();
 
       // 6. 每次提交后整体重算费用，再把本次差额追加进费用数组
       await this.updateOrderFeeListsAfterWorkPriceCreate(
         createDto.order_id,
         orderType,
         createDto.area,
+        existingWorkItems.length,
+        {
+          mode: createDto.gangmaster_cost_mode,
+          amount: createDto.manual_gangmaster_cost,
+          currentConstructionCost,
+        },
       );
 
       return createdItems;
@@ -1116,17 +1184,14 @@ export class WorkPriceItemService {
 
       // 2. 验证工价项是否属于该工匠
       if (workPriceItem.assigned_craftsman_id !== craftsmanId) {
-        throw new HttpException(
-          '无权查看此工价项的辅材',
-          HttpStatus.FORBIDDEN,
-        );
+        throw new HttpException('无权查看此工价项的辅材', HttpStatus.FORBIDDEN);
       }
 
       // 3. 确定要查询的订单ID
       // 如果工价项所在的订单有 parent_order_id，说明这是父订单（工长订单）
       // 需要查找对应的工匠订单来查询辅材
       let targetOrderId = workPriceItem.order_id;
-      
+
       if (workPriceItem.order.parent_order_id === null) {
         // 工价项在父订单（工长订单）中，需要找到对应的工匠订单
         const craftsmanOrder = await this.orderRepository.findOne({
@@ -1199,10 +1264,7 @@ export class WorkPriceItemService {
         throw error;
       }
       console.error('查询辅材失败:', error);
-      throw new HttpException(
-        '查询辅材失败',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('查询辅材失败', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -1252,7 +1314,9 @@ export class WorkPriceItemService {
           HttpStatus.BAD_REQUEST,
         );
       }
-      const requestedIds = [...new Set(workPriceItemIds.map((id) => Number(id)))];
+      const requestedIds = [
+        ...new Set(workPriceItemIds.map((id) => Number(id))),
+      ];
       items = await this.workPriceItemRepository.find({
         where: { id: In(requestedIds) },
         relations: ['order'],
@@ -1285,7 +1349,8 @@ export class WorkPriceItemService {
     const resolvedOrderId = items[0].order_id;
     const totalAmount = items
       .reduce(
-        (sum, i) => sum.plus(i.settlement_amount ?? i.calculateSettlementAmount()),
+        (sum, i) =>
+          sum.plus(i.settlement_amount ?? i.calculateSettlementAmount()),
         new Decimal(0),
       )
       .toDecimalPlaces(2)
@@ -1302,7 +1367,9 @@ export class WorkPriceItemService {
   /**
    * 微信回调：按工价项 id 定位并标记已付（幂等）
    */
-  async confirmPaymentByWorkPriceItemId(workPriceItemId: number): Promise<null> {
+  async confirmPaymentByWorkPriceItemId(
+    workPriceItemId: number,
+  ): Promise<null> {
     const id = Number(workPriceItemId);
     if (!Number.isFinite(id)) {
       throw new HttpException('工价项ID无效', HttpStatus.BAD_REQUEST);
@@ -1376,7 +1443,9 @@ export class WorkPriceItemService {
   /**
    * 子工价平台服务费：微信预下单（按工价项 id 列表，金额=各条 total_service_fee 之和）
    */
-  async getSubWorkPriceServiceFeePaymentPreview(workPriceItemIds: number[]): Promise<{
+  async getSubWorkPriceServiceFeePaymentPreview(
+    workPriceItemIds: number[],
+  ): Promise<{
     items: WorkPriceItem[];
     totalAmount: number;
     description: string;

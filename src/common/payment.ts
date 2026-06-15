@@ -9,8 +9,11 @@ import axios from 'axios';
 
 /** 业务应付（元）→ 微信下单金额（元）：按比例缩放，且不低于 0.01（微信最小支付单位） */
 function resolveWxPayYuan(businessYuan: number): number {
-  const ratio = WX_PAY_CHARGE_RATIO;
-  if (!Number.isFinite(ratio) || ratio >= 1 - 1e-12) {
+  const ratio = Number(WX_PAY_CHARGE_RATIO);
+  if (!Number.isFinite(ratio) || ratio <= 0 || ratio > 1) {
+    throw new Error('WX_PAY_CHARGE_RATIO 必须是 (0, 1] 范围内的数字');
+  }
+  if (ratio >= 1 - 1e-12) {
     return new Decimal(businessYuan).toDecimalPlaces(2).toNumber();
   }
   const biz = new Decimal(businessYuan);
@@ -78,4 +81,3 @@ export const callWxPay = async (params: WxPayParams): Promise<any> => {
     throw new Error(msg);
   }
 };
-

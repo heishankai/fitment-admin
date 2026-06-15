@@ -64,6 +64,28 @@ export class WorkPriceItemController {
   }
 
   /**
+   * 批量支付：将 body.work_price_item_ids 中的工价项全部置为已支付
+   */
+  @Post('batch-pay')
+  async batchPay(
+    @Body(ValidationPipe) body: BatchAcceptWorkPriceDto,
+  ): Promise<null> {
+    try {
+      return await this.workPriceItemService.batchConfirmPaymentByWorkPriceItemIds(
+        body.work_price_item_ids,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '批量支付工价失败',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
    * 根据订单ID查询工价项列表
    * @param orderId 订单ID
    * @returns 工价项列表

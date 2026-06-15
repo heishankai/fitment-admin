@@ -23,6 +23,20 @@ export class HomePageAuditService {
     private readonly notificationService: SystemNotificationService,
   ) {}
 
+  private normalizeUrlList(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value
+        .map((item) =>
+          typeof item === 'string'
+            ? item
+            : (item as { url?: unknown })?.url,
+        )
+        .filter((item): item is string => typeof item === 'string' && !!item);
+    }
+
+    return typeof value === 'string' && value ? [value] : [];
+  }
+
   /**
    * 分页查询首页审核记录
    * @param queryDto 查询参数 {pageIndex, pageSize, nickname, phone, status}
@@ -116,7 +130,10 @@ export class HomePageAuditService {
         };
         return {
           ...item,
-          status_name: HOME_PAGE_AUDIT_STATUS_MAP[item.status] || item.status_name,
+          status_name:
+            HOME_PAGE_AUDIT_STATUS_MAP[item.status] || item.status_name,
+          publish_images: this.normalizeUrlList(item.publish_images),
+          publish_video: this.normalizeUrlList(item.publish_video),
           nickname: userInfo.nickname,
           phone: userInfo.phone,
         };
@@ -160,9 +177,9 @@ export class HomePageAuditService {
     try {
       const { pageIndex = 1, pageSize = 10, status } = queryDto;
 
-      const query =
-        this.homePageAuditRepository.createQueryBuilder('home_page_audit')
-          .where('home_page_audit.userId = :userId', { userId });
+      const query = this.homePageAuditRepository
+        .createQueryBuilder('home_page_audit')
+        .where('home_page_audit.userId = :userId', { userId });
 
       if (status !== undefined && status !== null) {
         query.andWhere('home_page_audit.status = :status', { status });
@@ -179,7 +196,10 @@ export class HomePageAuditService {
 
       const dataWithStatusName = data.map((item) => ({
         ...item,
-        status_name: HOME_PAGE_AUDIT_STATUS_MAP[item.status] || item.status_name,
+        status_name:
+          HOME_PAGE_AUDIT_STATUS_MAP[item.status] || item.status_name,
+        publish_images: this.normalizeUrlList(item.publish_images),
+        publish_video: this.normalizeUrlList(item.publish_video),
       }));
 
       return {
@@ -230,6 +250,7 @@ export class HomePageAuditService {
         userId,
         publish_text: createHomePageAuditDto.publish_text,
         publish_images: createHomePageAuditDto.publish_images,
+        publish_video: createHomePageAuditDto.publish_video ?? [],
         status: HOME_PAGE_AUDIT_STATUS.PENDING,
         status_name: HOME_PAGE_AUDIT_STATUS_MAP[HOME_PAGE_AUDIT_STATUS.PENDING],
       });
@@ -281,17 +302,28 @@ export class HomePageAuditService {
       throw new BadRequestException('首页审核记录不存在');
     }
 
-    return homePageAudit;
+    return {
+      ...homePageAudit,
+      publish_images: this.normalizeUrlList(homePageAudit.publish_images),
+      publish_video: this.normalizeUrlList(homePageAudit.publish_video),
+    };
   }
 
   /**
    * 根据用户ID获取该工匠的所有首页审核记录（按创建时间倒序）
    */
   async findByUserId(userId: number): Promise<HomePageAudit[]> {
-    return this.homePageAuditRepository.find({
+    const records = await this.homePageAuditRepository.find({
       where: { userId },
       order: { createdAt: 'DESC' },
     });
+
+    return records.map((item) => ({
+      ...item,
+      status_name: HOME_PAGE_AUDIT_STATUS_MAP[item.status] || item.status_name,
+      publish_images: this.normalizeUrlList(item.publish_images),
+      publish_video: this.normalizeUrlList(item.publish_video),
+    }));
   }
 
   /**
@@ -309,6 +341,8 @@ export class HomePageAuditService {
     return records.map((item) => ({
       ...item,
       status_name: HOME_PAGE_AUDIT_STATUS_MAP[item.status] || item.status_name,
+      publish_images: this.normalizeUrlList(item.publish_images),
+      publish_video: this.normalizeUrlList(item.publish_video),
     }));
   }
 
@@ -324,6 +358,8 @@ export class HomePageAuditService {
     return records.map((item) => ({
       ...item,
       status_name: HOME_PAGE_AUDIT_STATUS_MAP[item.status] || item.status_name,
+      publish_images: this.normalizeUrlList(item.publish_images),
+      publish_video: this.normalizeUrlList(item.publish_video),
     }));
   }
 
@@ -345,7 +381,8 @@ export class HomePageAuditService {
 
       const updateData: Partial<HomePageAudit> = { ...updateDto };
       if (updateDto.status !== undefined) {
-        updateData.status_name = HOME_PAGE_AUDIT_STATUS_MAP[updateDto.status] ?? updateDto.status_name;
+        updateData.status_name =
+          HOME_PAGE_AUDIT_STATUS_MAP[updateDto.status] ?? updateDto.status_name;
       }
 
       await this.homePageAuditRepository.update(id, updateData);
@@ -377,7 +414,8 @@ export class HomePageAuditService {
 
       const updateData: Partial<HomePageAudit> = { ...updateDto };
       if (updateDto.status !== undefined) {
-        updateData.status_name = HOME_PAGE_AUDIT_STATUS_MAP[updateDto.status] ?? updateDto.status_name;
+        updateData.status_name =
+          HOME_PAGE_AUDIT_STATUS_MAP[updateDto.status] ?? updateDto.status_name;
       }
 
       await this.homePageAuditRepository.update(homePageAudit.id, updateData);
@@ -407,7 +445,8 @@ export class HomePageAuditService {
 
       await this.homePageAuditRepository.update(id, {
         status: HOME_PAGE_AUDIT_STATUS.PUBLISHED,
-        status_name: HOME_PAGE_AUDIT_STATUS_MAP[HOME_PAGE_AUDIT_STATUS.PUBLISHED],
+        status_name:
+          HOME_PAGE_AUDIT_STATUS_MAP[HOME_PAGE_AUDIT_STATUS.PUBLISHED],
       });
 
       await this.notificationService.create({
@@ -448,7 +487,10 @@ export class HomePageAuditService {
   /**
    * 按用户ID审核不通过（拒绝该用户最新的一条待审核记录）
    */
-  async rejectVerificationByUserId(userId: number, reason?: string): Promise<null> {
+  async rejectVerificationByUserId(
+    userId: number,
+    reason?: string,
+  ): Promise<null> {
     const record = await this.homePageAuditRepository.findOne({
       where: { userId },
       order: { createdAt: 'DESC' },
@@ -479,7 +521,8 @@ export class HomePageAuditService {
 
       await this.homePageAuditRepository.update(id, {
         status: HOME_PAGE_AUDIT_STATUS.REJECTED,
-        status_name: HOME_PAGE_AUDIT_STATUS_MAP[HOME_PAGE_AUDIT_STATUS.REJECTED],
+        status_name:
+          HOME_PAGE_AUDIT_STATUS_MAP[HOME_PAGE_AUDIT_STATUS.REJECTED],
       });
 
       const notificationContent = reason

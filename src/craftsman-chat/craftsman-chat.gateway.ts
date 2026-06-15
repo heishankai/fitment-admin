@@ -13,6 +13,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { JWT_CONFIG } from '../common/constants/app.constants';
 import { CraftsmanChatService } from './craftsman-chat.service';
 import { AdminNotificationService } from '../admin-notification/admin-notification.service';
+import { CustomerServiceConfigService } from '../customer-service-config/customer-service-config.service';
 
 /**
  * WebSocket Gateway for Craftsman Chat
@@ -43,6 +44,7 @@ export class CraftsmanChatGateway
     private readonly jwtService: JwtService,
     private readonly craftsmanChatService: CraftsmanChatService,
     private readonly adminNotificationService: AdminNotificationService,
+    private readonly customerServiceConfigService: CustomerServiceConfigService,
   ) {}
 
   /**
@@ -87,12 +89,14 @@ export class CraftsmanChatGateway
           // 检查房间是否有消息，如果没有消息，发送欢迎消息
           const hasMessages = await this.craftsmanChatService.hasMessages(roomId);
           if (!hasMessages) {
+            const serviceConfig =
+              await this.customerServiceConfigService.getConfig();
             // 发送欢迎消息（以管理员身份发送，senderId 使用 0 表示系统）
             const welcomeMessage = await this.craftsmanChatService.createMessage(
               roomId,
               'admin',
               0,
-              '欢迎使用智惠装，请问有什么可以帮助您的吗？',
+              serviceConfig.welcome_text,
               'text',
             );
             
@@ -110,10 +114,40 @@ export class CraftsmanChatGateway
               content: welcomeMessage.content,
               read: welcomeMessage.read,
               createdAt: welcomeMessage.createdAt,
+              serviceAvatar: serviceConfig.avatar,
             };
             
             // 广播欢迎消息到房间内的所有客户端
             this.server.to(`room:${roomId}`).emit('new-message', messageData);
+
+            if (serviceConfig.welcome_image) {
+              const welcomeImageMessage =
+                await this.craftsmanChatService.createMessage(
+                  roomId,
+                  'admin',
+                  0,
+                  serviceConfig.welcome_image,
+                  'image',
+                );
+              const imageMessageData = {
+                id: welcomeImageMessage.id,
+                chat_room_id: welcomeImageMessage.chat_room_id,
+                roomId: welcomeImageMessage.chat_room_id,
+                sender_type: welcomeImageMessage.sender_type,
+                senderType: welcomeImageMessage.sender_type,
+                sender_id: welcomeImageMessage.sender_id,
+                senderId: welcomeImageMessage.sender_id,
+                message_type: welcomeImageMessage.message_type || 'image',
+                messageType: welcomeImageMessage.message_type || 'image',
+                content: welcomeImageMessage.content,
+                read: welcomeImageMessage.read,
+                createdAt: welcomeImageMessage.createdAt,
+                serviceAvatar: serviceConfig.avatar,
+              };
+              this.server
+                .to(`room:${roomId}`)
+                .emit('new-message', imageMessageData);
+            }
             this.logger.log(`房间 ${roomId} 发送欢迎消息`);
           }
         }
@@ -216,6 +250,10 @@ export class CraftsmanChatGateway
         content,
         messageType,
       );
+      const serviceConfig =
+        userType === 'admin'
+          ? await this.customerServiceConfigService.getConfig()
+          : null;
 
       // 如果是工匠发送的消息，创建通知
       if (userType === 'craftsman') {
@@ -257,6 +295,7 @@ export class CraftsmanChatGateway
         content: message.content,
         read: message.read,
         createdAt: message.createdAt,
+        serviceAvatar: serviceConfig?.avatar,
       };
 
       // 广播消息到房间内的所有客户端
@@ -290,4 +329,3 @@ export class CraftsmanChatGateway
     }
   }
 }
-

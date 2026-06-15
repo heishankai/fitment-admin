@@ -73,9 +73,7 @@ export class IsSkillVerifiedController {
    * @returns 技能认证记录（包含用户的 isSkillVerified，以及关联工匠昵称、手机号）
    */
   @Get('my')
-  async getMySkillVerification(
-    @Request() request: any,
-  ): Promise<
+  async getMySkillVerification(@Request() request: any): Promise<
     | (IsSkillVerified & {
         isSkillVerified: boolean;
         relatedCraftsmanNickname: string | null;
@@ -102,6 +100,20 @@ export class IsSkillVerifiedController {
   }
 
   /**
+   * 根据技能认证ID查询从属关系
+   * - 工长：返回该工长下的所有工匠
+   * - 非工长：返回当前工匠所属的工长
+   * @param id 技能认证ID
+   * @returns 从属关系数组
+   */
+  @Get('relation/:id')
+  async findRelationsById(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<any[]> {
+    return await this.isSkillVerifiedService.findRelationsById(id);
+  }
+
+  /**
    * 根据ID获取技能认证记录
    * @param id 技能认证ID
    * @returns 技能认证记录
@@ -119,9 +131,7 @@ export class IsSkillVerifiedController {
    * @returns 技能认证记录（含 isSkillVerified；若有 relatedCraftsmanUserId 则附带关联工匠昵称与手机号）
    */
   @Get('user/:userId')
-  async findByUserId(
-    @Param('userId', ParseIntPipe) userId: number,
-  ): Promise<
+  async findByUserId(@Param('userId', ParseIntPipe) userId: number): Promise<
     | (IsSkillVerified & {
         isSkillVerified: boolean;
         relatedCraftsmanNickname: string | null;

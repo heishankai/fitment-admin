@@ -102,4 +102,10 @@ export class CreateWorkTypeDto {
   // 最低价格
   @IsOptional()
   minimum_price?: string | number;
+
+  // 排序值，越大越靠前
+  @IsNumber({}, { message: '排序值必须是数字' })
+  @Min(0, { message: '排序值不能小于0' })
+  @IsOptional()
+  sort?: number;
 }
