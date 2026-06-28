@@ -15,6 +15,7 @@ import {
 import { Public } from '../auth/public.decorator';
 import { CraftsmanUserService } from './craftsman-user.service';
 import { LoginDto } from './dto/login.dto';
+import { SmsLoginDto } from './dto/sms-login.dto';
 import { GetPhoneDto } from './dto/get-phone.dto';
 import { UpdateCraftsmanUserDto } from './dto/update-craftsman-user.dto';
 import { QueryCraftsmanUserDto } from './dto/query-craftsman-user.dto';
@@ -26,14 +27,36 @@ export class CraftsmanUserController {
 
   /**
    * 工匠端微信登录/注册
-   * @param body { code: string }
+   * 兼容旧Flutter短信登录：body包含phone时走短信登录，否则走微信登录。
+   * @param body { code: string } | { phone: string, code: string }
    * @returns 用户信息（包含token）
    */
   @Public()
   @Post(['login', 'wechat-login'])
-  async loginOrRegister(@Body() body: LoginDto) {
+  async loginOrRegister(@Body() body: LoginDto & Partial<SmsLoginDto>) {
     try {
+      if (body && 'phone' in body) {
+        return await this.craftsmanUserService.loginBySms(body as SmsLoginDto);
+      }
       return await this.craftsmanUserService.loginOrRegister(body);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('登录失败', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * 工匠端手机号短信登录/注册
+   * @param body { phone: string, code: string }
+   * @returns 用户信息（包含token）
+   */
+  @Public()
+  @Post(['sms-login', 'phone-login'])
+  async loginBySms(@Body(ValidationPipe) body: SmsLoginDto) {
+    try {
+      return await this.craftsmanUserService.loginBySms(body);
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;

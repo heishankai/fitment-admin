@@ -1,7 +1,11 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { WalletTransaction, WalletTransactionType } from './wallet-transaction.entity';
+import { In, Repository } from 'typeorm';
+import {
+  WalletTransaction,
+  WalletTransactionType,
+} from './wallet-transaction.entity';
+import { Order } from '../order/order.entity';
 import { CreateWalletTransactionDto } from './dto/create-wallet-transaction.dto';
 import { QueryWalletTransactionDto } from './dto/query-wallet-transaction.dto';
 
@@ -10,14 +14,65 @@ export class WalletTransactionService {
   constructor(
     @InjectRepository(WalletTransaction)
     private readonly transactionRepository: Repository<WalletTransaction>,
+    @InjectRepository(Order)
+    private readonly orderRepository: Repository<Order>,
   ) {}
+
+  private async formatTransactions(
+    transactions: WalletTransaction[],
+  ): Promise<any[]> {
+    const orderIds = [
+      ...new Set(
+        transactions
+          .map((transaction) => Number(transaction.order_id))
+          .filter((orderId) => Number.isInteger(orderId) && orderId > 0),
+      ),
+    ];
+
+    const orders =
+      orderIds.length > 0
+        ? await this.orderRepository.find({
+            where: { id: In(orderIds) },
+            select: ['id', 'housing_name', 'order_no'],
+          })
+        : [];
+    const orderMap = new Map(orders.map((order) => [order.id, order]));
+
+    return transactions.map((transaction) => {
+      const order = orderMap.get(Number(transaction.order_id));
+
+      return {
+        id: transaction.id,
+        craftsman_user: transaction.craftsman_user
+          ? {
+              id: transaction.craftsman_user.id,
+              nickname: transaction.craftsman_user.nickname,
+              phone: transaction.craftsman_user.phone,
+              avatar: transaction.craftsman_user.avatar,
+            }
+          : null,
+        amount: Number(transaction.amount),
+        type: transaction.type,
+        type_text:
+          transaction.type === WalletTransactionType.INCOME ? '收入' : '支出',
+        description: transaction.description,
+        order_id: transaction.order_id,
+        housing_name: order?.housing_name || null,
+        order_no: order?.order_no || null,
+        createdAt: transaction.createdAt,
+        updatedAt: transaction.updatedAt,
+      };
+    });
+  }
 
   /**
    * 创建账户明细
    * @param createDto 账户明细信息
    * @returns 创建的账户明细
    */
-  async create(createDto: CreateWalletTransactionDto): Promise<WalletTransaction> {
+  async create(
+    createDto: CreateWalletTransactionDto,
+  ): Promise<WalletTransaction> {
     try {
       const transaction = this.transactionRepository.create(createDto);
       return await this.transactionRepository.save(transaction);
@@ -37,11 +92,7 @@ export class WalletTransactionService {
    */
   async getTransactions(queryDto: QueryWalletTransactionDto): Promise<any> {
     try {
-      const {
-        craftsman_user_id,
-        type,
-        order_id,
-      } = queryDto;
+      const { craftsman_user_id, type, order_id } = queryDto;
 
       // 创建查询构建器
       const query = this.transactionRepository
@@ -72,24 +123,7 @@ export class WalletTransactionService {
       const data = await query.getMany();
 
       // 格式化返回数据
-      const formattedData = data.map((transaction) => ({
-        id: transaction.id,
-        craftsman_user: transaction.craftsman_user
-          ? {
-              id: transaction.craftsman_user.id,
-              nickname: transaction.craftsman_user.nickname,
-              phone: transaction.craftsman_user.phone,
-              avatar: transaction.craftsman_user.avatar,
-            }
-          : null,
-        amount: Number(transaction.amount),
-        type: transaction.type,
-        type_text: transaction.type === WalletTransactionType.INCOME ? '收入' : '支出',
-        description: transaction.description,
-        order_id: transaction.order_id,
-        createdAt: transaction.createdAt,
-        updatedAt: transaction.updatedAt,
-      }));
+      const formattedData = await this.formatTransactions(data);
 
       // 返回结果
       return {
@@ -151,24 +185,7 @@ export class WalletTransactionService {
       const data = await query.getMany();
 
       // 格式化返回数据
-      const formattedData = data.map((transaction) => ({
-        id: transaction.id,
-        craftsman_user: transaction.craftsman_user
-          ? {
-              id: transaction.craftsman_user.id,
-              nickname: transaction.craftsman_user.nickname,
-              phone: transaction.craftsman_user.phone,
-              avatar: transaction.craftsman_user.avatar,
-            }
-          : null,
-        amount: Number(transaction.amount),
-        type: transaction.type,
-        type_text: transaction.type === WalletTransactionType.INCOME ? '收入' : '支出',
-        description: transaction.description,
-        order_id: transaction.order_id,
-        createdAt: transaction.createdAt,
-        updatedAt: transaction.updatedAt,
-      }));
+      const formattedData = await this.formatTransactions(data);
 
       return {
         success: true,

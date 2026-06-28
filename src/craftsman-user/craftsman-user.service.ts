@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import axios from 'axios';
+import { SmsService } from '../sms/sms.service';
 // constants
 import {
   CRAFT_WECHAT_CONFIG,
@@ -24,6 +25,7 @@ import { LoginDto } from './dto/login.dto';
 import { UpdateCraftsmanUserDto } from './dto/update-craftsman-user.dto';
 import { QueryCraftsmanUserDto } from './dto/query-craftsman-user.dto';
 import { GetPhoneDto } from './dto/get-phone.dto';
+import { SmsLoginDto } from './dto/sms-login.dto';
 
 @Injectable()
 export class CraftsmanUserService {
@@ -41,6 +43,7 @@ export class CraftsmanUserService {
     @InjectRepository(WorkKind)
     private readonly workKindRepository: Repository<WorkKind>,
     private readonly jwtService: JwtService,
+    private readonly smsService: SmsService,
   ) {}
 
   /**
@@ -92,6 +95,58 @@ export class CraftsmanUserService {
         avatar: user.avatar || this.defaultAvatar,
         token,
       };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        '登录失败，请稍后重试',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 工匠端手机号短信登录/注册。
+   * 用于兼容旧Flutter端：POST /craftsman-user/login { phone, code }。
+   */
+  async loginBySms(smsLoginDto: SmsLoginDto): Promise<
+    CraftsmanUser & {
+      token: string;
+    }
+  > {
+    try {
+      const phone = smsLoginDto.phone?.trim();
+      const code = smsLoginDto.code?.trim();
+
+      if (!/^1[3-9]\d{9}$/.test(phone)) {
+        throw new HttpException('手机号格式不正确', HttpStatus.BAD_REQUEST);
+      }
+
+      if (!/^\d{4,6}$/.test(code)) {
+        throw new HttpException('验证码格式不正确', HttpStatus.BAD_REQUEST);
+      }
+
+      const isValidCode = this.smsService.verifyCode(phone, code);
+
+      if (!isValidCode) {
+        throw new HttpException('验证码错误或已过期', HttpStatus.BAD_REQUEST);
+      }
+
+      let user = await this.craftsmanUserRepository.findOne({
+        where: { phone },
+      });
+
+      if (!user) {
+        user = this.craftsmanUserRepository.create({
+          phone,
+          nickname: this.defaultNickname,
+          avatar: this.defaultAvatar,
+        });
+        user = await this.craftsmanUserRepository.save(user);
+      }
+
+      return this.withCraftsmanToken(user);
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;

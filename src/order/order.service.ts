@@ -1489,6 +1489,83 @@ export class OrderService {
   }
 
   /**
+   * 已分配工匠单的工价项是从工长单复制出来的快照。
+   * 早期逻辑复制时写死未支付/未验收，这里按父工长单状态做一次单向同步。
+   */
+  private async syncAssignedOrderWorkItemStatusesFromParent(
+    order: Order,
+  ): Promise<void> {
+    if (
+      !order.parent_order_id ||
+      !order.craftsman_user_id ||
+      !order.is_assigned
+    ) {
+      return;
+    }
+
+    const [parentItems, childItems] = await Promise.all([
+      this.workPriceItemRepository.find({
+        where: {
+          order_id: order.parent_order_id,
+          assigned_craftsman_id: order.craftsman_user_id,
+        },
+        order: { createdAt: 'ASC' },
+      }),
+      this.workPriceItemRepository.find({
+        where: { order_id: order.id },
+        order: { createdAt: 'ASC' },
+      }),
+    ]);
+
+    if (!parentItems.length || !childItems.length) {
+      return;
+    }
+
+    const getSyncKey = (item: WorkPriceItem) =>
+      [
+        Number(item.work_price_id),
+        item.work_title || '',
+        Number(item.quantity) || 0,
+        Number(item.settlement_amount) || item.calculateSettlementAmount(),
+      ].join('|');
+
+    const parentItemsBySyncKey = new Map<string, WorkPriceItem[]>();
+    for (const parentItem of parentItems) {
+      const key = getSyncKey(parentItem);
+      const list = parentItemsBySyncKey.get(key) || [];
+      list.push(parentItem);
+      parentItemsBySyncKey.set(key, list);
+    }
+
+    const changedItems: WorkPriceItem[] = [];
+    for (const childItem of childItems) {
+      const candidates = parentItemsBySyncKey.get(getSyncKey(childItem)) || [];
+      const parentItem = candidates.shift();
+      if (!parentItem) {
+        continue;
+      }
+
+      let changed = false;
+      if (parentItem.is_paid === true && childItem.is_paid !== true) {
+        childItem.is_paid = true;
+        changed = true;
+      }
+      if (parentItem.is_accepted === true && childItem.is_accepted !== true) {
+        childItem.is_accepted = true;
+        changed = true;
+      }
+
+      if (changed) {
+        changedItems.push(childItem);
+      }
+    }
+
+    if (changedItems.length > 0) {
+      await this.workPriceItemRepository.save(changedItems);
+    }
+  }
+
+  /**
    * 根据ID获取订单（包含关联信息和父工价列表）
    * @param orderId 订单ID
    * @returns 订单信息（包含父工价列表和统计信息）
@@ -1502,6 +1579,8 @@ export class OrderService {
     if (!order) {
       throw new HttpException('订单不存在', HttpStatus.NOT_FOUND);
     }
+
+    await this.syncAssignedOrderWorkItemStatusesFromParent(order);
 
     let allWorkItems = await this.workPriceItemRepository.find({
       where: { order_id: orderId },
@@ -3456,8 +3535,8 @@ export class OrderService {
           labour_cost_name: item.labour_cost_name,
           minimum_price: item.minimum_price,
           is_set_minimum_price: item.is_set_minimum_price,
-          is_paid: false, // 新订单的工价项默认未支付
-          is_accepted: false, // 新订单的工价项默认未验收
+          is_paid: item.is_paid === true,
+          is_accepted: item.is_accepted === true,
           assigned_craftsman_id: craftsman_id,
           gangmaster_user_id: parentOrder.craftsman_user_id || null,
           craftsman_user_id: craftsman_id,
