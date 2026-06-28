@@ -11,6 +11,10 @@ export class WorkType {
   @PrimaryGeneratedColumn()
   id: number;
 
+  // 编码（唯一标识，不可重复）
+  @Column({ type: 'varchar', length: 20, nullable: true, unique: true })
+  code?: string;
+
   // 工种名称
   @Column()
   work_title: string;

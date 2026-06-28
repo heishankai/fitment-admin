@@ -16,6 +16,14 @@ const normalizeSortValue = (sort: unknown): number => {
   return Number.isFinite(value) && value >= 0 ? Math.trunc(value) : 0;
 };
 
+const normalizeCodeValue = (code?: string | null): string | null | undefined => {
+  if (code === undefined) {
+    return undefined;
+  }
+  const trimmed = code?.trim();
+  return trimmed ? trimmed : null;
+};
+
 @Injectable()
 export class WorkTypeService {
   constructor(
@@ -105,15 +113,48 @@ export class WorkTypeService {
   }
 
   /**
+   * 校验编码唯一性，存在重复时抛出友好错误
+   * @param code 编码
+   * @param excludeId 更新时需要排除的当前记录ID
+   */
+  private async ensureCodeUnique(
+    code?: string | null,
+    excludeId?: number,
+  ): Promise<void> {
+    const normalizedCode = normalizeCodeValue(code);
+    if (!normalizedCode) {
+      return;
+    }
+
+    const qb = this.workTypeRepository
+      .createQueryBuilder('work_type')
+      .where('work_type.code = :code', { code: normalizedCode });
+
+    if (excludeId !== undefined) {
+      qb.andWhere('work_type.id != :excludeId', { excludeId });
+    }
+
+    const existing = await qb.getOne();
+
+    if (existing) {
+      throw new BadRequestException(`编码 ${normalizedCode} 已存在，请勿重复`);
+    }
+  }
+
+  /**
    * 创建工种类型
    * @param createWorkTypeDto 创建工种类型DTO
    * @returns null，由全局拦截器包装成标准响应
    */
   async createWorkType(createWorkTypeDto: CreateWorkTypeDto): Promise<null> {
     try {
+      const code = normalizeCodeValue(createWorkTypeDto.code);
+      await this.ensureCodeUnique(code);
+
       // 创建新的工种类型记录
       const workType = this.workTypeRepository.create({
         ...createWorkTypeDto,
+        code,
         sort: normalizeSortValue(createWorkTypeDto.sort),
       });
 
@@ -124,6 +165,9 @@ export class WorkTypeService {
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }
       return null;
     } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
       throw new BadRequestException('创建工种类型失败: ' + error.message);
     }
   }
@@ -165,15 +209,22 @@ export class WorkTypeService {
         throw new BadRequestException('工种类型不存在');
       }
 
+      if (updateDto.code !== undefined) {
+        await this.ensureCodeUnique(updateDto.code, id);
+      }
+
       const updatePayload = { ...updateDto };
+      if (updatePayload.code !== undefined) {
+        updatePayload.code = normalizeCodeValue(updatePayload.code);
+      }
       if (updatePayload.sort !== undefined && updatePayload.sort !== null) {
         updatePayload.sort = normalizeSortValue(updatePayload.sort);
       } else {
         delete updatePayload.sort;
       }
 
-      // 更新记录
-      await this.workTypeRepository.update(id, updatePayload);
+      Object.assign(workType, updatePayload);
+      await this.workTypeRepository.save(workType);
 
       await this.redisService.deleteByPattern(WORK_TYPE_PAGE_CACHE_PATTERN);
       // 返回null，全局拦截器会自动包装成 { success: true, data: null, code: 200, message: null }

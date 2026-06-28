@@ -123,10 +123,8 @@ export class CraftsmanUserService {
       });
 
       if (phoneUser && openidUser && phoneUser.id !== openidUser.id) {
-        // 释放临时微信账号上的 openid，再迁移到原手机号账号。
-        await this.craftsmanUserRepository.update(openidUser.id, {
-          openid: null,
-        });
+        // 手机号已有正式账号：把 openid 迁过去，并删除 wx_ 占位临时账号。
+        await this.removeTemporaryWechatUser(openidUser);
       }
 
       if (phoneUser) {
@@ -188,6 +186,18 @@ export class CraftsmanUserService {
 
   private buildWechatPlaceholderPhone(openid: string): string {
     return `wx_${openid}`;
+  }
+
+  private isWechatPlaceholderPhone(phone?: string | null): boolean {
+    return !!phone?.startsWith('wx_');
+  }
+
+  /** 合并到正式手机号账号后，删除仅用于微信登录过渡的临时账号。 */
+  private async removeTemporaryWechatUser(user: CraftsmanUser): Promise<void> {
+    if (!this.isWechatPlaceholderPhone(user.phone)) {
+      return;
+    }
+    await this.craftsmanUserRepository.remove(user);
   }
 
   private async getPhoneNumberFromWechat(code: string): Promise<string> {

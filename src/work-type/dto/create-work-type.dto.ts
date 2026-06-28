@@ -7,6 +7,7 @@ import {
   Min,
   ValidateNested,
   ArrayMinSize,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -46,6 +47,12 @@ class LabourCostDto {
 }
 
 export class CreateWorkTypeDto {
+  // 编码（唯一标识，不可重复）
+  @IsString({ message: '编码必须是字符串' })
+  @MaxLength(20, { message: '编码长度不能超过20' })
+  @IsOptional()
+  code?: string;
+
   // 工种名称
   @IsString()
   @IsNotEmpty({ message: '工种名称不能为空' })

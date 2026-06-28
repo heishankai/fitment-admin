@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsNumber, IsArray, Min, ValidateNested, IsNotEmpty, ArrayMinSize } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsArray, Min, ValidateNested, IsNotEmpty, ArrayMinSize, MaxLength } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class ServiceDetailDto {
@@ -40,6 +40,14 @@ class LabourCostDto {
  * 更新工种类型DTO
  */
 export class UpdateWorkTypeDto {
+  /**
+   * 编码（唯一标识，不可重复）
+   */
+  @IsOptional()
+  @IsString({ message: '编码必须是字符串' })
+  @MaxLength(20, { message: '编码长度不能超过20' })
+  code?: string;
+
   /**
    * 工种名称
    */
